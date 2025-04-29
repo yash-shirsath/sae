@@ -9,7 +9,7 @@ description = "Your project description"
 requires-python = ">=3.10"
 dependencies = [
     "sae-lens>=5.9.1",
-    "torch>=2.0.0,<=2.2.0",
+    "torch>=2.0.0,<=2.2.0; platform_system == 'Darwin'",
     "transformer-lens>=2.15.0",
 ]
 

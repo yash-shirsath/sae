@@ -1,7 +1,7 @@
 # Load environment variables
 source .env
 
-git clone https://${GITHUB_TOKEN}@github.com/yash-shirsath/gradient-routing.git
+git clone https://${GITHUB_TOKEN}@github.com/yash-shirsath/sae.git
 git config --global user.email "yash.shirsath@gmail.com"
 git config --global user.name "Yash Shirsath (GPU)"
 
