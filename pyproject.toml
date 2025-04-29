@@ -6,8 +6,12 @@ build-backend = "hatchling.build"
 name = "sae"
 version = "0.1.0"
 description = "Your project description"
-requires-python = ">=3.8"
-dependencies = []
+requires-python = ">=3.10"
+dependencies = [
+    "sae-lens>=5.9.1",
+    "torch>=2.0.0,<=2.2.0",
+    "transformer-lens>=2.15.0",
+]
 
 [project.optional-dependencies]
 dev = [
