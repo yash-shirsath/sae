@@ -13,15 +13,20 @@ def run(prompt: str, pipeline: StableDiffusionPipeline):
 
 #%%
 
-pipeline = StableDiffusionPipeline.from_pretrained("CompVis/stable-diffusion-v1-4")
+pipe = StableDiffusionPipeline.from_pretrained("CompVis/stable-diffusion-v1-4")
 device = "cuda"
-pipeline.to(device)
+pipe.to(device)
 
 #%%
-run("a portrait of a wise old warrior", pipeline)
+run("a portrait of a wise old warrior", pipe)
 
 # %%
-print(torch.cuda.is_available())
-print(torch.cuda.get_arch_list())
+
+def custom_pipeline(prompt: str, pipe: StableDiffusionPipeline):
+    pass
+    # prompt_embeds, negative_prompt_embeds = pipe.encode_prompt()
+    # prompt_embeds.shape = b, s, h
+
+
 
 # %%
