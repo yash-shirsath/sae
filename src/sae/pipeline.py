@@ -11,11 +11,14 @@ def run(prompt: str, pipeline: StableDiffusionPipeline):
     display(image.images[0])
 
 
-if __name__ == "__main__":
-    pipeline = StableDiffusionPipeline.from_pretrained("CompVis/stable-diffusion-v1-4")
-    device = "cuda"
-    pipeline.to(device)
-    run("a portrait of a wise old warrior", pipeline)
+#%%
+
+pipeline = StableDiffusionPipeline.from_pretrained("CompVis/stable-diffusion-v1-4")
+device = "cuda"
+pipeline.to(device)
+
+#%%
+run("a portrait of a wise old warrior", pipeline)
 
 # %%
 print(torch.cuda.is_available())
