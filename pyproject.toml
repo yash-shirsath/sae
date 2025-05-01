@@ -8,17 +8,21 @@ version = "0.1.0"
 description = "Your project description"
 requires-python = ">=3.10"
 dependencies = [
-    "diffusers>=0.33.1",
-    "sae-lens>=5.9.1",
-    "transformer-lens>=2.15.0",
+    "torch"
 ]
 
 [dependency-groups]
 dev = [
-    "ipykernel>=6.29.5",
-    "ruff>=0.3.0",
-    "pytest>=7.0.0",
 ]
+
+[tool.uv.sources]
+torch = { index = "pytorch_index" }
+torchvision = { index = "pytorch_index" }
+
+[[tool.uv.index]]
+name = "pytorch_index"
+url = "https://download.pytorch.org/whl/nightly/cu128"
+
 
 [tool.ruff]
 line-length = 88
