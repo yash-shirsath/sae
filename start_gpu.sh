@@ -10,6 +10,7 @@ touch ~/.no_auto_tmux
 cursor --install-extension ms-python.python
 cursor --install-extension ms-toolsai.jupyter
 cursor --install-extension nvidia.nsight-vscode-edition
+cursor --install-extension charliermarsh.ruff
 
 pip install uv
 uv venv
