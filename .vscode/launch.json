@@ -11,7 +11,8 @@
             "program": "${file}",
             "cwd": "${workspaceFolder}",
             "justMyCode": false,
-            "console": "integratedTerminal"
+            "console": "integratedTerminal",
+            
         }
     ]
 }
