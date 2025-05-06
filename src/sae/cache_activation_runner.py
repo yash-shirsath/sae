@@ -3,6 +3,8 @@ from typing import Union, List, Optional, Tuple
 from diffusers import StableDiffusionPipeline  # type: ignore
 from dataclasses import dataclass
 import torch as t
+import os
+from pathlib import Path
 
 
 @dataclass
@@ -22,7 +24,31 @@ class CacheActivationsRunner:
         pipe = HookedDiffusionPipeline.from_pretrained(self.cfg.model_name)
         pipe.to(self.cfg.device)
 
-        pipe.run_with_cache("Sick image of clouds")
+        output_activations = pipe.run_with_cache(
+            prompt="Sick image of clouds",
+            positions_to_cache=[
+                "unet.up_blocks.1.attentions.1",
+                "unet.up_blocks.1.attentions.2",
+            ],
+        )
+        self.save_activations(output_activations)
+
+    def save_activations(
+        self, activations: dict, output_dir=None, file_prefix="activations"
+    ):
+        dir = Path(__file__).parent
+        if output_dir is None:
+            dir = os.path.join(dir, "activations")
+
+        os.makedirs(dir, exist_ok=True)
+
+        for position in activations.keys():
+            out = activations[position].cpu()
+            output_path = os.path.join(dir, f"{file_prefix}_{position}.pt")
+            t.save(out, output_path)
+
+        print(f"Saved {len(activations)} activations to {dir}")
+        return True
 
 
 class HookedDiffusionPipeline:
@@ -36,12 +62,11 @@ class HookedDiffusionPipeline:
         guidance_scale: float = 7.5,
         num_inference_steps: int = 50,
         generator: Optional[Union[t.Generator, List[t.Generator]]] = None,
-    ) -> Tuple[dict, dict]:
-        cache_input, cache_output = defaultdict(list), defaultdict(list)
-        positions_to_cache = ["unet.up_blocks.1.attentions.1"]
+    ) -> dict:
+        position_activation_map = defaultdict(list)
 
         hook_handles = [
-            self._register_cache(position, cache_input, cache_output)
+            self._register_cache(position, position_activation_map)
             for position in positions_to_cache
         ]
         hook_handles = [h for h in hook_handles if h]
@@ -53,7 +78,13 @@ class HookedDiffusionPipeline:
         for handle in hook_handles:
             handle.remove()
 
-        return cache_input, cache_output
+        cache_output = {}
+        # Stack all tensors after hooks are removed
+        for position in position_activation_map:
+            cache_output[position] = t.stack(position_activation_map[position], dim=0)
+            assert cache_output[position].shape == (51, 2, 1280, 16, 16)
+
+        return cache_output
 
     def _run_generation_pipeline(
         self,
@@ -69,10 +100,12 @@ class HookedDiffusionPipeline:
             generator=generator,
         )
 
-    def _register_cache(self, position: str, cache_input: dict, cache_output: dict):
+    def _register_cache(self, position: str, cache_output: dict):
         def hook_fn(module, input, output):
-            cache_input[position].append(input)
-            cache_output[position].append(output)
+            assert isinstance(output, tuple) and len(output) == 1, (
+                "unexpected output from hook"
+            )
+            cache_output[position].append(output[0])
 
         block: t.nn.Module = self._locate_block(position)
         return block.register_forward_hook(hook_fn)

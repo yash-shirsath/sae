@@ -1,6 +1,7 @@
 # adapted from cywinski/saeuron
 
 import json
+from dataclasses import dataclass
 from fnmatch import fnmatch
 from pathlib import Path
 from typing import NamedTuple
@@ -10,10 +11,40 @@ import torch
 from huggingface_hub import snapshot_download
 from natsort import natsorted
 from safetensors.torch import load_model, save_model
+from simple_parsing import Serializable
 from torch import Tensor, nn
 
-from .config import SaeConfig
-from .utils import decoder_impl
+from sae.sae_decoder import decoder_impl
+
+
+@dataclass
+class SaeConfig(Serializable):
+    """
+    Configuration for training a sparse autoencoder on a language model.
+    """
+
+    expansion_factor: int = 32
+    """Multiple of the input dimension to use as the SAE dimension."""
+
+    normalize_decoder: bool = True
+    """Normalize the decoder weights to have unit norm."""
+
+    num_latents: int = 0
+    """Number of latents to use. If 0, use `expansion_factor`."""
+
+    k: int = 32
+    """Number of nonzero features."""
+
+    batch_topk: bool = False
+    """Train Batch-TopK SAEs"""
+
+    sample_topk: bool = False
+    """Take TopK latents per whole generated sample, not only per patch of the feature map"""
+
+    input_unit_norm: bool = False
+
+    multi_topk: bool = False
+    """Use Multi-TopK loss."""
 
 
 class EncoderOutput(NamedTuple):
