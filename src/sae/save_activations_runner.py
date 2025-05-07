@@ -1,20 +1,32 @@
-from collections import defaultdict
-from typing import Union, List, Optional, Tuple
-from diffusers import StableDiffusionPipeline  # type: ignore
-from dataclasses import dataclass
-import torch as t
 import os
+from collections import defaultdict
+from dataclasses import dataclass
 from pathlib import Path
+from typing import List, Optional, Tuple, Union
+
+import torch as t
+from diffusers import StableDiffusionPipeline  # type: ignore
+from datasets import (
+    IterableDataset,
+    load_from_disk,
+    Features,
+    Value,
+    Sequence,
+    Array2D,
+    Array4D,
+)
 
 
 @dataclass
-class CacheActivationsRunnerCfg:
+class SaveActivationsCfg:
     model_name: str = "CompVis/stable-diffusion-v1-4"
     device: str = "cuda"
 
+    batch_size: int = 32
 
-class CacheActivationsRunner:
-    def __init__(self, cfg: CacheActivationsRunnerCfg) -> None:
+
+class SaveActivationsRunner:
+    def __init__(self, cfg: SaveActivationsCfg) -> None:
         self.cfg = cfg
 
     def run(self):
@@ -24,6 +36,32 @@ class CacheActivationsRunner:
         pipe = HookedDiffusionPipeline.from_pretrained(self.cfg.model_name)
         pipe.to(self.cfg.device)
 
+        prompts_dict = self.load_prompts()
+        train_prompts = self.subset_prompts(prompts_dict)
+
+        ds = IterableDataset.from_generator(
+            self.activation_generator(pipe, train_prompts),
+            features=Features(
+                {
+                    "prompts": Sequence(Value("string")),  # variable-length list
+                    "activations": Array2D(
+                        shape=(None, model.config.hidden_size), dtype="float32"
+                    ),  # 2D float32 (B, H)
+                }
+            ),
+        )
+
+    def subset_prompts(self, prompt_dict: dict) -> list[str]:
+        pass
+
+    def load_prompts(self, data_dir="") -> dict:
+        pass
+
+    def activation_generator(self, pipe: HookedDiffusionPipeline, prompts: list[str]):
+        """
+        1. generates batches
+        2. yields activations
+        """
         output_activations = pipe.run_with_cache(
             prompt="Sick image of clouds",
             positions_to_cache=[
@@ -32,6 +70,7 @@ class CacheActivationsRunner:
             ],
         )
         self.save_activations(output_activations)
+        pass
 
     def save_activations(
         self, activations: dict, output_dir=None, file_prefix="activations"
@@ -131,6 +170,6 @@ class HookedDiffusionPipeline:
 
 
 if __name__ == "__main__":
-    cfg = CacheActivationsRunnerCfg()
-    runner = CacheActivationsRunner(cfg)
+    cfg = SaveActivationsCfg()
+    runner = SaveActivationsRunner(cfg)
     runner.run()

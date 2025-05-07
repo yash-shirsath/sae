@@ -13,7 +13,7 @@ def read_prompts_file(object_name):
         return [line.strip() for line in f if line.strip()]
 
 
-def generate_styled_prompts():
+def generate_styled_prompts() -> tuple[list[str], list[tuple[str, str]]]:
     """Generate prompts by combining object prompts with style modifiers."""
     all_prompts = []
     prompt_metadata = []  #  (object, style) pairs for each prompt
