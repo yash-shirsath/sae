@@ -2,19 +2,19 @@ import os
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Tuple, Union
+from typing import Iterable, List, Optional, Tuple, Union
 
 import torch as t
-from diffusers import StableDiffusionPipeline  # type: ignore
 from datasets import (
-    IterableDataset,
-    load_from_disk,
-    Features,
-    Value,
-    Sequence,
     Array2D,
     Array4D,
+    Features,
+    IterableDataset,
+    Sequence,
+    Value,
+    load_from_disk,
 )
+from diffusers import StableDiffusionPipeline  # type: ignore
 from einops import rearrange
 
 
@@ -25,70 +25,6 @@ class SaveActivationsCfg:
 
     batch_size: int = 32
     activation_dtype = t.float16
-
-
-class SaveActivationsRunner:
-    def __init__(self, cfg: SaveActivationsCfg) -> None:
-        self.cfg = cfg
-
-    def run(self):
-        """
-        takes pipeline and dataset, runs stable diffusion
-        """
-        pipe = HookedDiffusionPipeline.from_pretrained(self.cfg)
-        pipe.to(self.cfg.device)
-
-        prompts_dict = self.load_prompts()
-        train_prompts = self.subset_prompts(prompts_dict)
-
-        ds = IterableDataset.from_generator(
-            self.activation_generator(pipe, train_prompts),
-            features=Features(
-                {
-                    "activations": Array4D(
-                        shape=(2, 1280 * 51, 16, 16), dtype="float16"
-                    ),
-                }
-            ),
-        )
-
-    def subset_prompts(self, prompt_dict: dict) -> list[str]:
-        pass
-
-    def load_prompts(self, data_dir="") -> dict:
-        pass
-
-    def activation_generator(self, pipe: HookedDiffusionPipeline, prompts: list[str]):
-        """
-        1. generates batches
-        2. yields activations
-        """
-        output_activations = pipe.run_with_cache(
-            prompt="Sick image of clouds",
-            positions_to_cache=[
-                "unet.up_blocks.1.attentions.1",
-                "unet.up_blocks.1.attentions.2",
-            ],
-        )
-        self.save_activations(output_activations)
-        pass
-
-    def save_activations(
-        self, activations: dict, output_dir=None, file_prefix="activations"
-    ):
-        dir = Path(__file__).parent
-        if output_dir is None:
-            dir = os.path.join(dir, "activations")
-
-        os.makedirs(dir, exist_ok=True)
-
-        for position in activations.keys():
-            out = activations[position].cpu()
-            output_path = os.path.join(dir, f"{file_prefix}_{position}.pt")
-            t.save(out, output_path)
-
-        print(f"Saved {len(activations)} activations to {dir}")
-        return True
 
 
 class HookedDiffusionPipeline:
@@ -122,6 +58,7 @@ class HookedDiffusionPipeline:
         cache_output = {}
         # Stack all tensors after hooks are removed
         for position in position_activation_map:
+            # stacks list of tensors into a step dimension
             activations = t.stack(position_activation_map[position], dim=0)
             assert activations.shape == (51, 2, 1280, 16, 16)
             activations = rearrange(
@@ -175,6 +112,81 @@ class HookedDiffusionPipeline:
         pipe = StableDiffusionPipeline.from_pretrained(cfg.model_name)
         assert isinstance(pipe, StableDiffusionPipeline)
         return cls(pipe, cfg)
+
+
+class SaveActivationsRunner:
+    def __init__(self, cfg: SaveActivationsCfg) -> None:
+        self.cfg = cfg
+
+    def run(self):
+        """
+        takes pipeline and dataset, runs stable diffusion
+        """
+        pipe = HookedDiffusionPipeline.from_pretrained(self.cfg)
+        pipe.to(self.cfg.device)
+
+        activations = pipe.run_with_cache(
+            prompt=["Sick image of clouds", "Sick image of clouds"],
+            positions_to_cache=[
+                "unet.up_blocks.1.attentions.1",
+            ],
+        )
+        print(activations)
+        # prompts_dict = self.load_prompts()
+        # train_prompts = self.subset_prompts(prompts_dict)
+
+        # ds = IterableDataset.from_generator(
+        #     self.activation_generator(pipe, train_prompts),
+        #     features=Features(
+        #         {
+        #             "activations": Array4D(
+        #                 shape=(2, 1280 * 51, 16, 16), dtype="float16"
+        #             ),
+        #         }
+        #     ),
+        # )
+
+    # def subset_prompts(self, prompt_dict: dict) -> list[str]:
+    #     pass
+
+    # def load_prompts(self, data_dir="") -> dict:
+    #     pass
+
+    # def activation_generator(
+    #     self, pipe: HookedDiffusionPipeline, prompts: list[str]
+    # ) -> Iterable[dict]:
+    #     """
+    #     1. generates batches
+    #     2. yields activations
+    #     """
+    #     b = self.cfg.batch_size
+    #     for i in range(0, len(prompts), b):
+    #         batch_prompts = prompts[i : i + b]
+    #         activations = pipe.run_with_cache(
+    #             prompt=batch_prompts,
+    #             positions_to_cache=[
+    #                 "unet.up_blocks.1.attentions.1",
+    #                 "unet.up_blocks.1.attentions.2",
+    #             ],
+    #         )
+    #     yield {"activations": activations}
+
+    # def save_activations(
+    #     self, activations: dict, output_dir=None, file_prefix="activations"
+    # ):
+    #     dir = Path(__file__).parent
+    #     if output_dir is None:
+    #         dir = os.path.join(dir, "activations")
+
+    #     os.makedirs(dir, exist_ok=True)
+
+    #     for position in activations.keys():
+    #         out = activations[position].cpu()
+    #         output_path = os.path.join(dir, f"{file_prefix}_{position}.pt")
+    #         t.save(out, output_path)
+
+    #     print(f"Saved {len(activations)} activations to {dir}")
+    #     return True
 
 
 if __name__ == "__main__":
