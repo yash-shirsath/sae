@@ -14,7 +14,7 @@ from datasets import (
     Value,
     load_from_disk,
 )
-from diffusers import StableDiffusionPipeline  # type: ignore
+from diffusers import DDIMScheduler, StableDiffusionPipeline  # type: ignore
 from einops import rearrange
 
 
@@ -31,6 +31,8 @@ class HookedDiffusionPipeline:
     def __init__(self, pipe: StableDiffusionPipeline, cfg: SaveActivationsCfg) -> None:
         self.pipe = pipe
         self.cfg = cfg
+
+        self.pipe.scheduler = DDIMScheduler.from_config(self.pipe.scheduler.config)
 
     def run_with_cache(
         self,
@@ -60,12 +62,9 @@ class HookedDiffusionPipeline:
         for position in position_activation_map:
             # stacks list of tensors into a step dimension
             activations = t.stack(position_activation_map[position], dim=0)
-            assert activations.shape == (51, 2, 1280, 16, 16)
-            activations = rearrange(
-                activations, "steps condition c h w -> condition (steps c) h w"
-            )
-            assert activations.shape == (2, 1280 * 51, 16, 16)
-            activations = activations.to(self.cfg.activation_dtype)
+            s, b, c, h, w = activations.shape
+            assert (s, c, h, w) == (51, 1280, 16, 16)
+            activations = rearrange(activations, "steps b c h w -> b (steps c) h w")
             cache_output[position] = activations
 
         return cache_output
@@ -89,7 +88,11 @@ class HookedDiffusionPipeline:
             assert isinstance(output, tuple) and len(output) == 1, (
                 "unexpected output from hook"
             )
-            cache_output[position].append(output[0])
+            activations = output[0].to(self.cfg.activation_dtype)
+            _, c, h, w = activations.shape
+            assert (c, h, w) == (1280, 16, 16), "unexpected activation shape"
+            neg_conditioned, text_conditioned = activations.chunk(2, dim=0)
+            cache_output[position].append(text_conditioned)
 
         block: t.nn.Module = self._locate_block(position)
         return block.register_forward_hook(hook_fn)
@@ -126,12 +129,16 @@ class SaveActivationsRunner:
         pipe.to(self.cfg.device)
 
         activations = pipe.run_with_cache(
-            prompt=["Sick image of clouds", "Sick image of clouds"],
+            prompt=[
+                "Sick image of clouds",
+                "Sick image of clouds",
+                "Sick image of clouds",
+            ],
             positions_to_cache=[
                 "unet.up_blocks.1.attentions.1",
             ],
         )
-        print(activations)
+        print(activations["unet.up_blocks.1.attentions.1"].shape)
         # prompts_dict = self.load_prompts()
         # train_prompts = self.subset_prompts(prompts_dict)
 
