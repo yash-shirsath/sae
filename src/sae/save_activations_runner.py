@@ -15,6 +15,7 @@ from datasets import (
     Array2D,
     Array4D,
 )
+from einops import rearrange
 
 
 @dataclass
@@ -23,6 +24,7 @@ class SaveActivationsCfg:
     device: str = "cuda"
 
     batch_size: int = 32
+    activation_dtype = t.float16
 
 
 class SaveActivationsRunner:
@@ -33,7 +35,7 @@ class SaveActivationsRunner:
         """
         takes pipeline and dataset, runs stable diffusion
         """
-        pipe = HookedDiffusionPipeline.from_pretrained(self.cfg.model_name)
+        pipe = HookedDiffusionPipeline.from_pretrained(self.cfg)
         pipe.to(self.cfg.device)
 
         prompts_dict = self.load_prompts()
@@ -43,10 +45,9 @@ class SaveActivationsRunner:
             self.activation_generator(pipe, train_prompts),
             features=Features(
                 {
-                    "prompts": Sequence(Value("string")),  # variable-length list
-                    "activations": Array2D(
-                        shape=(None, model.config.hidden_size), dtype="float32"
-                    ),  # 2D float32 (B, H)
+                    "activations": Array4D(
+                        shape=(2, 1280 * 51, 16, 16), dtype="float16"
+                    ),
                 }
             ),
         )
@@ -91,8 +92,9 @@ class SaveActivationsRunner:
 
 
 class HookedDiffusionPipeline:
-    def __init__(self, pipe: StableDiffusionPipeline) -> None:
+    def __init__(self, pipe: StableDiffusionPipeline, cfg: SaveActivationsCfg) -> None:
         self.pipe = pipe
+        self.cfg = cfg
 
     def run_with_cache(
         self,
@@ -120,8 +122,14 @@ class HookedDiffusionPipeline:
         cache_output = {}
         # Stack all tensors after hooks are removed
         for position in position_activation_map:
-            cache_output[position] = t.stack(position_activation_map[position], dim=0)
-            assert cache_output[position].shape == (51, 2, 1280, 16, 16)
+            activations = t.stack(position_activation_map[position], dim=0)
+            assert activations.shape == (51, 2, 1280, 16, 16)
+            activations = rearrange(
+                activations, "steps condition c h w -> condition (steps c) h w"
+            )
+            assert activations.shape == (2, 1280 * 51, 16, 16)
+            activations = activations.to(self.cfg.activation_dtype)
+            cache_output[position] = activations
 
         return cache_output
 
@@ -163,10 +171,10 @@ class HookedDiffusionPipeline:
         self.pipe.to(device)
 
     @classmethod
-    def from_pretrained(cls, model_name: str) -> "HookedDiffusionPipeline":
-        pipe = StableDiffusionPipeline.from_pretrained(model_name)
+    def from_pretrained(cls, cfg: SaveActivationsCfg) -> "HookedDiffusionPipeline":
+        pipe = StableDiffusionPipeline.from_pretrained(cfg.model_name)
         assert isinstance(pipe, StableDiffusionPipeline)
-        return cls(pipe)
+        return cls(pipe, cfg)
 
 
 if __name__ == "__main__":
