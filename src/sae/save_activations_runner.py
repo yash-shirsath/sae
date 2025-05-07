@@ -1,15 +1,16 @@
 import os
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, List, Optional, Tuple, Union
+import random
 
 import torch as t
 from datasets import (
     Array2D,
     Array4D,
     Features,
-    IterableDataset,
+    Dataset,
     Sequence,
     Value,
     load_from_disk,
@@ -17,13 +18,20 @@ from datasets import (
 from diffusers import DDIMScheduler, StableDiffusionPipeline  # type: ignore
 from einops import rearrange
 
+from data.activation_capture_prompts.prepare import load_generated_prompts
+from tqdm.auto import tqdm
+
 
 @dataclass
 class SaveActivationsCfg:
     model_name: str = "CompVis/stable-diffusion-v1-4"
+    hook_positions: List[str] = field(
+        default_factory=lambda: ["unet.up_blocks.1.attentions.1"]
+    )
     device: str = "cuda"
 
-    batch_size: int = 32
+    batch_size: int = 30
+    subset_size: int = 120
     activation_dtype = t.float16
 
 
@@ -45,7 +53,7 @@ class HookedDiffusionPipeline:
         position_activation_map = defaultdict(list)
 
         hook_handles = [
-            self._register_cache(position, position_activation_map)
+            self._register_cache_hook(position, position_activation_map)
             for position in positions_to_cache
         ]
         hook_handles = [h for h in hook_handles if h]
@@ -63,7 +71,9 @@ class HookedDiffusionPipeline:
             # stacks list of tensors into a step dimension
             activations = t.stack(position_activation_map[position], dim=0)
             s, b, c, h, w = activations.shape
-            assert (s, c, h, w) == (51, 1280, 16, 16)
+            assert (s, c, h, w) == (50, 1280, 16, 16), (
+                f"unexpected activation shape: {activations.shape}"
+            )
             activations = rearrange(activations, "steps b c h w -> b (steps c) h w")
             cache_output[position] = activations
 
@@ -83,7 +93,7 @@ class HookedDiffusionPipeline:
             generator=generator,
         )
 
-    def _register_cache(self, position: str, cache_output: dict):
+    def _register_cache_hook(self, position: str, cache_output: dict):
         def hook_fn(module, input, output):
             assert isinstance(output, tuple) and len(output) == 1, (
                 "unexpected output from hook"
@@ -112,7 +122,11 @@ class HookedDiffusionPipeline:
 
     @classmethod
     def from_pretrained(cls, cfg: SaveActivationsCfg) -> "HookedDiffusionPipeline":
-        pipe = StableDiffusionPipeline.from_pretrained(cfg.model_name)
+        pipe = StableDiffusionPipeline.from_pretrained(
+            cfg.model_name,
+            torch_dtype=cfg.activation_dtype,
+            safety_checker=None,
+        )
         assert isinstance(pipe, StableDiffusionPipeline)
         return cls(pipe, cfg)
 
@@ -128,72 +142,65 @@ class SaveActivationsRunner:
         pipe = HookedDiffusionPipeline.from_pretrained(self.cfg)
         pipe.to(self.cfg.device)
 
-        activations = pipe.run_with_cache(
-            prompt=[
-                "Sick image of clouds",
-                "Sick image of clouds",
-                "Sick image of clouds",
-            ],
-            positions_to_cache=[
-                "unet.up_blocks.1.attentions.1",
-            ],
+        prompts_dict = self.load_prompts()
+        train_prompts = self.subset_prompts(prompts_dict)
+
+        ds = Dataset.from_generator(
+            lambda: tqdm(
+                self.activation_generator(pipe, train_prompts),
+                total=(len(train_prompts) + self.cfg.batch_size - 1)
+                // self.cfg.batch_size,
+            ),
+            features=Features(
+                {
+                    "activations": Array4D(
+                        shape=(self.cfg.batch_size, 1280 * 50, 16, 16),
+                        dtype="float16",
+                    ),
+                }
+            ),
         )
-        print(activations["unet.up_blocks.1.attentions.1"].shape)
-        # prompts_dict = self.load_prompts()
-        # train_prompts = self.subset_prompts(prompts_dict)
 
-        # ds = IterableDataset.from_generator(
-        #     self.activation_generator(pipe, train_prompts),
-        #     features=Features(
-        #         {
-        #             "activations": Array4D(
-        #                 shape=(2, 1280 * 51, 16, 16), dtype="float16"
-        #             ),
-        #         }
-        #     ),
-        # )
+        ds.save_to_disk("activations_ds/")
+        print(f"Saved dataset to activations_ds/")
 
-    # def subset_prompts(self, prompt_dict: dict) -> list[str]:
-    #     pass
+    def subset_prompts(self, prompt_dict: dict) -> list[str]:
+        prompts = prompt_dict["prompts"]
+        if len(prompts) <= self.cfg.subset_size:
+            return prompts
+        return random.sample(prompts, self.cfg.subset_size)
 
-    # def load_prompts(self, data_dir="") -> dict:
-    #     pass
+    def load_prompts(self) -> dict:
+        return load_generated_prompts()
 
-    # def activation_generator(
-    #     self, pipe: HookedDiffusionPipeline, prompts: list[str]
-    # ) -> Iterable[dict]:
-    #     """
-    #     1. generates batches
-    #     2. yields activations
-    #     """
-    #     b = self.cfg.batch_size
-    #     for i in range(0, len(prompts), b):
-    #         batch_prompts = prompts[i : i + b]
-    #         activations = pipe.run_with_cache(
-    #             prompt=batch_prompts,
-    #             positions_to_cache=[
-    #                 "unet.up_blocks.1.attentions.1",
-    #                 "unet.up_blocks.1.attentions.2",
-    #             ],
-    #         )
-    #     yield {"activations": activations}
+    def activation_generator(
+        self, pipe: HookedDiffusionPipeline, prompts: list[str]
+    ) -> Iterable[dict]:
+        b = self.cfg.batch_size
+        for i in range(0, len(prompts), b):
+            batch_prompts = prompts[i : i + b]
+            activations = pipe.run_with_cache(
+                prompt=batch_prompts,
+                positions_to_cache=self.cfg.hook_positions,
+            )
+            yield {"activations": activations["unet.up_blocks.1.attentions.1"]}
 
-    # def save_activations(
-    #     self, activations: dict, output_dir=None, file_prefix="activations"
-    # ):
-    #     dir = Path(__file__).parent
-    #     if output_dir is None:
-    #         dir = os.path.join(dir, "activations")
+    def save_activations(
+        self, activations: dict, output_dir=None, file_prefix="activations"
+    ):
+        dir = Path(__file__).parent
+        if output_dir is None:
+            dir = os.path.join(dir, "activations")
 
-    #     os.makedirs(dir, exist_ok=True)
+        os.makedirs(dir, exist_ok=True)
 
-    #     for position in activations.keys():
-    #         out = activations[position].cpu()
-    #         output_path = os.path.join(dir, f"{file_prefix}_{position}.pt")
-    #         t.save(out, output_path)
+        for position in activations.keys():
+            out = activations[position].cpu()
+            output_path = os.path.join(dir, f"{file_prefix}_{position}.pt")
+            t.save(out, output_path)
 
-    #     print(f"Saved {len(activations)} activations to {dir}")
-    #     return True
+        print(f"Saved {len(activations)} activations to {dir}")
+        return True
 
 
 if __name__ == "__main__":
