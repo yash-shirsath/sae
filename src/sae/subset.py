@@ -3,8 +3,10 @@ from typing import Optional
 
 import pandas as pd
 
+from data.activation_capture_prompts.prepare import load_generated_prompts
 
-def subset_prompts(
+
+def balance_prompts_objects_styles(
     df: pd.DataFrame, main_object: str, random_state: Optional[int] = None
 ) -> pd.DataFrame:
     """
@@ -98,10 +100,8 @@ def subset_prompts(
 
 # %%
 
-df = pd.read_parquet(
-    "/workspace/sae/src/data/activation_capture_prompts/all_prompts.parquet"
-)
-subsampled_df = subset_prompts(df, "Dogs", random_state=42)
+df = load_generated_prompts()
+subsampled_df = balance_prompts_objects_styles(df, "Dogs", random_state=42)
 
 # %%
 print("Original DataFrame length:", len(df))

@@ -47,6 +47,12 @@ def save_prompts_dataframe(output_dir=None, filename="all_prompts.parquet"):
     return output_path
 
 
+def load_generated_prompts(
+    path="/workspace/sae/src/data/activation_capture_prompts/all_prompts.parquet",
+) -> pd.DataFrame:
+    return pd.read_parquet(path)
+
+
 if __name__ == "__main__":
     parquet_path = save_prompts_dataframe()
 

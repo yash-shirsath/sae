@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, List, Optional, Tuple, Union
 
+import numpy as np
+from sae.subset import balance_prompts_objects_styles
 import torch as t
 from datasets import (
     Array2D,
@@ -20,7 +22,8 @@ from einops import rearrange
 from tqdm.auto import tqdm
 
 from data.activation_capture_prompts.prepare import load_generated_prompts
-import numpy as np
+
+import pandas as pd
 
 
 @dataclass
@@ -143,23 +146,26 @@ class SaveActivationsRunner:
         pipe = HookedDiffusionPipeline.from_pretrained(self.cfg)
         pipe.to(self.cfg.device)
 
-        prompts_dict = self.load_prompts()
-        train_prompts = self.subset_prompts(prompts_dict)
+        train_prompts = self.load_prompts()
 
-        for batch in tqdm(
-            self.activation_generator(pipe, train_prompts),
-            total=(len(train_prompts) + self.cfg.batch_size - 1) // self.cfg.batch_size,
-        ):
-            print(batch["activations"].shape)
+        # for c in concepts:
+        #
 
-    def subset_prompts(self, prompt_dict: dict) -> list[str]:
-        prompts = prompt_dict["prompts"]
+        # for batch in tqdm(
+        #     self.activation_generator(pipe, train_prompts),
+        #     total=(len(train_prompts) + self.cfg.batch_size - 1) // self.cfg.batch_size,
+        # ):
+        #     print(batch["activations"].shape)
+
+    def load_prompts(self) -> list[str]:
+        all = load_generated_prompts()
+        balanced = balance_prompts_objects_styles(
+            all, main_object="Dogs", random_state=42
+        )
+        prompts = balanced["prompt"].tolist()
         if len(prompts) <= self.cfg.subset_size:
             return prompts
         return random.sample(prompts, self.cfg.subset_size)
-
-    def load_prompts(self) -> dict:
-        return load_generated_prompts()
 
     def activation_generator(
         self, pipe: HookedDiffusionPipeline, prompts: list[str]
@@ -172,23 +178,6 @@ class SaveActivationsRunner:
                 positions_to_cache=self.cfg.hook_positions,
             )
             yield {"activations": activations["unet.up_blocks.1.attentions.1"]}
-
-    def save_activations(
-        self, activations: dict, output_dir=None, file_prefix="activations"
-    ):
-        dir = Path(__file__).parent
-        if output_dir is None:
-            dir = os.path.join(dir, "activations")
-
-        os.makedirs(dir, exist_ok=True)
-
-        for position in activations.keys():
-            out = activations[position].cpu()
-            output_path = os.path.join(dir, f"{file_prefix}_{position}.pt")
-            t.save(out, output_path)
-
-        print(f"Saved {len(activations)} activations to {dir}")
-        return True
 
 
 if __name__ == "__main__":
