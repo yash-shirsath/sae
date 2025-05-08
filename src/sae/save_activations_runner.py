@@ -38,6 +38,9 @@ class SaveActivationsCfg:
     subset_size: int = 120
     activation_dtype = t.float16
 
+    """biased dataset toward main_object"""
+    main_object = "Dog"
+
 
 class HookedDiffusionPipeline:
     def __init__(self, pipe: StableDiffusionPipeline, cfg: SaveActivationsCfg) -> None:
@@ -147,9 +150,14 @@ class SaveActivationsRunner:
         pipe.to(self.cfg.device)
 
         train_prompts = self.load_prompts()
-
-        # for c in concepts:
-        #
+        """
+        for c in concepts:
+            calculate shape of memmap 
+            open memmap 
+            for batch in prompts[c]
+                memmap(b) = latents
+            flush memmap 
+        """
 
         # for batch in tqdm(
         #     self.activation_generator(pipe, train_prompts),
@@ -157,15 +165,12 @@ class SaveActivationsRunner:
         # ):
         #     print(batch["activations"].shape)
 
-    def load_prompts(self) -> list[str]:
+    def load_prompts(self) -> pd.DataFrame:
         all = load_generated_prompts()
         balanced = balance_prompts_objects_styles(
             all, main_object="Dogs", random_state=42
         )
-        prompts = balanced["prompt"].tolist()
-        if len(prompts) <= self.cfg.subset_size:
-            return prompts
-        return random.sample(prompts, self.cfg.subset_size)
+        return balanced
 
     def activation_generator(
         self, pipe: HookedDiffusionPipeline, prompts: list[str]

@@ -52,7 +52,7 @@ styles = [
     "Winter",
 ]
 
-objects = [
+concepts = [
     "Architectures",
     "Bears",
     "Birds",

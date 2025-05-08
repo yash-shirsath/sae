@@ -7,49 +7,49 @@ from data.activation_capture_prompts.prepare import load_generated_prompts
 
 
 def balance_prompts_objects_styles(
-    df: pd.DataFrame, main_object: str, random_state: Optional[int] = None
+    df: pd.DataFrame, main_concept: str, random_state: Optional[int] = None
 ) -> pd.DataFrame:
     """
-    Subset the prompts DataFrame to create a balanced dataset with a main object and other objects.
-    Ensures even distribution of both objects and styles in the non-main object portion.
+    Subset the prompts DataFrame to create a balanced dataset with a main concept and other concepts.
+    Ensures even distribution of both concepts and styles in the non-main concept portion.
 
     Args:
-        df: Input DataFrame containing prompts with 'object' and 'style' columns
-        main_object: The main object to include all prompts for
+        df: Input DataFrame containing prompts with 'concept' and 'style' columns
+        main_concept: The main concept to include all prompts for
         random_state: Optional random seed for reproducibility
 
     Returns:
         DataFrame containing:
-        - All prompts for the main object
-        - An even distribution of other objects and their styles
+        - All prompts for the main concept
+        - An even distribution of other concepts and their styles
     """
-    # Get all prompts for the main object
-    main_object_df = df[df["object"] == main_object].copy()
-    main_object_count = len(main_object_df)
+    # Get all prompts for the main concept
+    main_concept_df = df[df["concept"] == main_concept].copy()
+    main_concept_count = len(main_concept_df)
 
-    # Get all other objects
-    other_objects_df = df[df["object"] != main_object].copy()
+    # Get all other concepts
+    other_concepts_df = df[df["concept"] != main_concept].copy()
 
-    # Get unique objects and styles
-    unique_objects = other_objects_df["object"].unique()
-    unique_styles = other_objects_df["style"].unique()
-    n_objects = len(unique_objects)
+    # Get unique concepts and styles
+    unique_concepts = other_concepts_df["concept"].unique()
+    unique_styles = other_concepts_df["style"].unique()
+    n_concepts = len(unique_concepts)
     n_styles = len(unique_styles)
 
-    # Calculate how many prompts we need per object to achieve even distribution
-    prompts_per_object = main_object_count // n_objects
-    remaining_prompts = main_object_count % n_objects
+    # Calculate how many prompts we need per concept to achieve even distribution
+    prompts_per_concept = main_concept_count // n_concepts
+    remaining_prompts = main_concept_count % n_concepts
 
     # Initialize list to store sampled prompts
     sampled_prompts = []
 
-    # For each object, sample prompts while trying to maintain even style distribution
-    for i, obj in enumerate(unique_objects):
-        # Add one extra prompt to the first 'remaining_prompts' objects to account for division remainder
-        n_samples = prompts_per_object + (1 if i < remaining_prompts else 0)
+    # For each concept, sample prompts while trying to maintain even style distribution
+    for i, concept in enumerate(unique_concepts):
+        # Add one extra prompt to the first 'remaining_prompts' concepts to account for division remainder
+        n_samples = prompts_per_concept + (1 if i < remaining_prompts else 0)
 
-        # Get all prompts for this object
-        obj_df = other_objects_df[other_objects_df["object"] == obj]
+        # Get all prompts for this concept
+        concept_df = other_concepts_df[other_concepts_df["concept"] == concept]
 
         # Calculate how many prompts we want per style for this object
         prompts_per_style = n_samples // n_styles
@@ -63,8 +63,8 @@ def balance_prompts_objects_styles(
                 1 if j < remaining_style_prompts else 0
             )
 
-            # Get prompts for this style within this object
-            style_df = obj_df[obj_df["style"] == style]
+            # Get prompts for this style within this concept
+            style_df = concept_df[concept_df["style"] == style]
 
             # If we have more prompts than needed, sample randomly
             if len(style_df) > style_n_samples:
@@ -75,25 +75,25 @@ def balance_prompts_objects_styles(
 
             style_samples.append(style_df)
 
-        # Combine all style samples for this object
-        obj_sampled = pd.concat(style_samples, ignore_index=True)
+        # Combine all style samples for this concept
+        concept_sampled = pd.concat(style_samples, ignore_index=True)
 
         # If we still need more prompts to reach n_samples, sample from remaining prompts
-        if len(obj_sampled) < n_samples:
-            remaining_df = obj_df[~obj_df.index.isin(obj_sampled.index)]
+        if len(concept_sampled) < n_samples:
+            remaining_df = concept_df[~concept_df.index.isin(concept_sampled.index)]
             if len(remaining_df) > 0:
                 additional_samples = remaining_df.sample(
-                    n=min(n_samples - len(obj_sampled), len(remaining_df)),
+                    n=min(n_samples - len(concept_sampled), len(remaining_df)),
                     random_state=random_state,
                 )
-                obj_sampled = pd.concat(
-                    [obj_sampled, additional_samples], ignore_index=True
+                concept_sampled = pd.concat(
+                    [concept_sampled, additional_samples], ignore_index=True
                 )
 
-        sampled_prompts.append(obj_sampled)
+        sampled_prompts.append(concept_sampled)
 
-    # Combine main object and sampled other objects
-    result_df = pd.concat([main_object_df] + sampled_prompts, ignore_index=True)
+    # Combine main concept and sampled other concepts
+    result_df = pd.concat([main_concept_df] + sampled_prompts, ignore_index=True)
 
     return result_df
 
@@ -107,16 +107,16 @@ subsampled_df = balance_prompts_objects_styles(df, "Dogs", random_state=42)
 print("Original DataFrame length:", len(df))
 print("Subsampled DataFrame length:", len(subsampled_df))
 print("\nCount of each object in original DataFrame:")
-print(df["object"].value_counts())
+print(df["concept"].value_counts())
 # %%
 print("\nCount of each object in subsampled DataFrame:")
-print(subsampled_df["object"].value_counts())
+print(subsampled_df["concept"].value_counts())
 
 # %%
 # Analyze and visualize style distribution in non-dog portion
 import matplotlib.pyplot as plt
 
-non_dog_df = subsampled_df[subsampled_df["object"] != "Dogs"]
+non_dog_df = subsampled_df[subsampled_df["concept"] != "Dogs"]
 style_counts = non_dog_df["style"].value_counts()
 
 # Create the plot

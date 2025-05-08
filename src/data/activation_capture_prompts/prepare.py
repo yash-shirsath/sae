@@ -3,30 +3,32 @@ from pathlib import Path
 
 import pandas as pd
 
-from data.activation_capture_prompts.definitions import objects, styles
+from data.activation_capture_prompts.definitions import concepts, styles
 
 
-def read_prompts_file(object_name):
+def read_prompts_file(concept_name):
     """Read prompts from the corresponding object file."""
-    file_path = Path(__file__).parent / f"sd_prompt_{object_name}.txt"
+    file_path = Path(__file__).parent / f"sd_prompt_{concept_name}.txt"
     with open(file_path, "r") as f:
         return [line.strip() for line in f if line.strip()]
 
 
 def generate_styled_prompts() -> pd.DataFrame:
-    """Generate prompts by combining object prompts with style modifiers."""
+    """Generate prompts by combining concept prompts with style modifiers."""
     records = []
 
-    for obj in objects:
-        base_prompts = read_prompts_file(obj)
+    for concept in concepts:
+        base_prompts = read_prompts_file(concept)
 
         for prompt in base_prompts:
             # Add the base prompt without style
-            records.append({"object": obj, "style": "None", "prompt": prompt})
+            records.append({"concept": concept, "style": "None", "prompt": prompt})
 
             for style in styles:
                 styled_prompt = f"{prompt}, {style} style"
-                records.append({"object": obj, "style": style, "prompt": styled_prompt})
+                records.append(
+                    {"concept": concept, "style": style, "prompt": styled_prompt}
+                )
 
     return pd.DataFrame(records)
 
@@ -47,9 +49,8 @@ def save_prompts_dataframe(output_dir=None, filename="all_prompts.parquet"):
     return output_path
 
 
-def load_generated_prompts(
-    path="/workspace/sae/src/data/activation_capture_prompts/all_prompts.parquet",
-) -> pd.DataFrame:
+def load_generated_prompts(filename="all_prompts.parquet") -> pd.DataFrame:
+    path = os.path.join(Path(__file__).parent, filename)
     return pd.read_parquet(path)
 
 
