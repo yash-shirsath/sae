@@ -147,8 +147,8 @@ class SaveActivationsRunner:
         """
         takes pipeline and dataset, runs stable diffusion
         """
-        # pipe = HookedDiffusionPipeline.from_pretrained(self.cfg)
-        # pipe.to(self.cfg.device)
+        pipe = HookedDiffusionPipeline.from_pretrained(self.cfg)
+        pipe.to(self.cfg.device)
 
         train_prompts = self.load_prompts()
         """
@@ -159,31 +159,37 @@ class SaveActivationsRunner:
                 memmap(b) = latents
             flush memmap 
         """
-        for c in train_prompts["concept"].unique():
-            print(c)
+        for c in ["Dogs"]:
+            prompts = train_prompts[train_prompts["concept"] == c]
+            num_prompts = len(prompts)
 
-        # for batch in tqdm(
-        #     self.activation_generator(pipe, train_prompts),
-        #     total=(len(train_prompts) + self.cfg.batch_size - 1) // self.cfg.batch_size,
-        # ):
-        #     print(batch["activations"].shape)
+            if num_prompts > self.cfg.subset_size:
+                prompts = prompts.sample(self.cfg.subset_size)
+                num_prompts = self.cfg.subset_size
+
+            handle = np.memmap(
+                f"{c}.bin",
+                dtype="float16",
+                mode="w+",
+                shape=(num_prompts, 2, 1280 * 51, 16, 16),
+            )
+
+            b = self.cfg.batch_size
+            for i in range(0, num_prompts, b):
+                batch_df = prompts[i : i + b]
+                activations = pipe.run_with_cache(
+                    prompt=batch_df["prompt"].tolist(),
+                    positions_to_cache=self.cfg.hook_positions,
+                )
+                activations = activations["unet.up_blocks.1.attentions.1"]
+                handle[i : i + b] = activations
+
+            handle.flush()
 
     def load_prompts(self) -> pd.DataFrame:
         all = load_generated_prompts()
         balanced = balance_concepts_styles(all, main_concept="Dogs", random_state=42)
         return balanced
-
-    def activation_generator(
-        self, pipe: HookedDiffusionPipeline, prompts: list[str]
-    ) -> Iterable[dict]:
-        b = self.cfg.batch_size
-        for i in range(0, len(prompts), b):
-            batch_prompts = prompts[i : i + b]
-            activations = pipe.run_with_cache(
-                prompt=batch_prompts,
-                positions_to_cache=self.cfg.hook_positions,
-            )
-            yield {"activations": activations["unet.up_blocks.1.attentions.1"]}
 
 
 if __name__ == "__main__":
