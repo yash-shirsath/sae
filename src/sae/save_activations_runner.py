@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Iterable, List, Optional, Tuple, Union
 
 import numpy as np
-from sae.subset import balance_prompts_objects_styles
+import pandas as pd
 import torch as t
 from datasets import (
     Array2D,
@@ -21,9 +21,10 @@ from diffusers import DDIMScheduler, StableDiffusionPipeline  # type: ignore
 from einops import rearrange
 from tqdm.auto import tqdm
 
-from data.activation_capture_prompts.prepare import load_generated_prompts
-
-import pandas as pd
+from data.activation_capture_prompts.prepare import (
+    balance_concepts_styles,
+    load_generated_prompts,
+)
 
 
 @dataclass
@@ -146,8 +147,8 @@ class SaveActivationsRunner:
         """
         takes pipeline and dataset, runs stable diffusion
         """
-        pipe = HookedDiffusionPipeline.from_pretrained(self.cfg)
-        pipe.to(self.cfg.device)
+        # pipe = HookedDiffusionPipeline.from_pretrained(self.cfg)
+        # pipe.to(self.cfg.device)
 
         train_prompts = self.load_prompts()
         """
@@ -158,6 +159,8 @@ class SaveActivationsRunner:
                 memmap(b) = latents
             flush memmap 
         """
+        for c in train_prompts["concept"].unique():
+            print(c)
 
         # for batch in tqdm(
         #     self.activation_generator(pipe, train_prompts),
@@ -167,9 +170,7 @@ class SaveActivationsRunner:
 
     def load_prompts(self) -> pd.DataFrame:
         all = load_generated_prompts()
-        balanced = balance_prompts_objects_styles(
-            all, main_object="Dogs", random_state=42
-        )
+        balanced = balance_concepts_styles(all, main_concept="Dogs", random_state=42)
         return balanced
 
     def activation_generator(
