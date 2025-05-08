@@ -36,7 +36,7 @@ class SaveActivationsCfg:
     device: str = "cuda"
 
     batch_size: int = 30
-    subset_size: int = 120
+    subset_size: int = 5_000  # bigger than the biggest prompt len for now
     activation_dtype = t.float16
 
     """biased dataset toward main_object"""
@@ -159,7 +159,7 @@ class SaveActivationsRunner:
                 memmap(b) = latents
             flush memmap 
         """
-        for c in ["Dogs"]:
+        for c in set(train_prompts["concept"].unique()) - {"Dogs"}:
             prompts = train_prompts[train_prompts["concept"] == c]
             num_prompts = len(prompts)
 
@@ -171,18 +171,22 @@ class SaveActivationsRunner:
                 f"{c}.bin",
                 dtype="float16",
                 mode="w+",
-                shape=(num_prompts, 2, 1280 * 51, 16, 16),
+                shape=(num_prompts, 1280 * 50, 16, 16),
             )
 
             b = self.cfg.batch_size
-            for i in range(0, num_prompts, b):
+            for i in tqdm(
+                range(0, num_prompts, b),
+                desc=f"Processing {c} prompts",
+                total=num_prompts // b + (1 if num_prompts % b else 0),
+            ):
                 batch_df = prompts[i : i + b]
                 activations = pipe.run_with_cache(
                     prompt=batch_df["prompt"].tolist(),
                     positions_to_cache=self.cfg.hook_positions,
                 )
                 activations = activations["unet.up_blocks.1.attentions.1"]
-                handle[i : i + b] = activations
+                handle[i : i + b] = activations.cpu().numpy()
 
             handle.flush()
 
