@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 
-import torch
+import pandas as pd
 
 from data.activation_capture_prompts.definitions import objects, styles
 
@@ -13,73 +13,43 @@ def read_prompts_file(object_name):
         return [line.strip() for line in f if line.strip()]
 
 
-def generate_styled_prompts() -> tuple[list[str], list[tuple[str, str]]]:
+def generate_styled_prompts() -> pd.DataFrame:
     """Generate prompts by combining object prompts with style modifiers."""
-    all_prompts = []
-    prompt_metadata = []  #  (object, style) pairs for each prompt
+    records = []
 
     for obj in objects:
         base_prompts = read_prompts_file(obj)
 
         for prompt in base_prompts:
             # Add the base prompt without style
-            all_prompts.append(prompt)
-            prompt_metadata.append((obj, "None"))
+            records.append({"object": obj, "style": "None", "prompt": prompt})
 
             for style in styles:
                 styled_prompt = f"{prompt}, {style} style"
-                all_prompts.append(styled_prompt)
-                prompt_metadata.append((obj, style))
+                records.append({"object": obj, "style": style, "prompt": styled_prompt})
 
-    return all_prompts, prompt_metadata
+    return pd.DataFrame(records)
 
 
-def save_prompts_pytorch(output_dir=None, filename="prompts"):
-    """Save prompts as PyTorch tensors."""
+def save_prompts_dataframe(output_dir=None, filename="all_prompts.parquet"):
+    """Save prompts DataFrame to a Parquet file."""
     if output_dir is None:
         output_dir = Path(__file__).parent
 
-    prompts, metadata = generate_styled_prompts()
-
-    # Create dictionaries for object and style mapping
-    object_to_idx = {obj: i for i, obj in enumerate(objects)}
-    style_to_idx = {style: i for i, style in enumerate(styles + ["None"])}
-
-    # Convert metadata to indices
-    object_indices = [object_to_idx[m[0]] for m in metadata]
-    style_indices = [style_to_idx[m[1]] for m in metadata]
-
-    assert len(prompts) == len(object_indices) == len(style_indices)
-
-    data_dict = {
-        "prompts": prompts,
-        "object_indices": torch.tensor(object_indices),
-        "style_indices": torch.tensor(style_indices),
-        "object_names": objects,
-        "style_names": styles + ["None"],
-    }
-
-    test = [
-        data_dict["style_names"][si].lower() in p.lower()
-        for p, si in zip(
-            data_dict["prompts"],
-            data_dict["style_indices"],
-        )
-        if data_dict["style_names"][si] != "None"
-    ]
-    assert all(test)
+    prompts_df = generate_styled_prompts()
 
     os.makedirs(output_dir, exist_ok=True)
-    output_path = os.path.join(output_dir, f"{filename}.pt")
+    output_path = os.path.join(output_dir, filename)
 
-    torch.save(data_dict, output_path)
+    prompts_df.to_parquet(output_path, index=False)
 
-    print(f"Saved {len(prompts)} prompts to {output_path}")
+    print(f"Saved prompts DataFrame to {output_path}")
     return output_path
 
 
 if __name__ == "__main__":
-    pt_path = save_prompts_pytorch()
+    parquet_path = save_prompts_dataframe()
 
-    print("\nTo load the data in your training script:")
-    print(f"data = torch.load('{pt_path}')")
+    print("\nTo load the data in your script:")
+    print(f"import pandas as pd")
+    print(f"prompts_df = pd.read_parquet('{parquet_path}')")

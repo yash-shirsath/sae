@@ -17,6 +17,7 @@ dependencies = [
     "natsort>=8.4.0",
     "simple-parsing>=0.1.7",
     "datasets>=3.0.1",
+    "matplotlib>=3.9.0",
 ]
 
 [dependency-groups]

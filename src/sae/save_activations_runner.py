@@ -1,25 +1,26 @@
 import os
+import random
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, List, Optional, Tuple, Union
-import random
 
 import torch as t
 from datasets import (
     Array2D,
     Array4D,
-    Features,
     Dataset,
+    Features,
     Sequence,
     Value,
     load_from_disk,
 )
 from diffusers import DDIMScheduler, StableDiffusionPipeline  # type: ignore
 from einops import rearrange
+from tqdm.auto import tqdm
 
 from data.activation_capture_prompts.prepare import load_generated_prompts
-from tqdm.auto import tqdm
+import numpy as np
 
 
 @dataclass
@@ -145,24 +146,11 @@ class SaveActivationsRunner:
         prompts_dict = self.load_prompts()
         train_prompts = self.subset_prompts(prompts_dict)
 
-        ds = Dataset.from_generator(
-            lambda: tqdm(
-                self.activation_generator(pipe, train_prompts),
-                total=(len(train_prompts) + self.cfg.batch_size - 1)
-                // self.cfg.batch_size,
-            ),
-            features=Features(
-                {
-                    "activations": Array4D(
-                        shape=(self.cfg.batch_size, 1280 * 50, 16, 16),
-                        dtype="float16",
-                    ),
-                }
-            ),
-        )
-
-        ds.save_to_disk("activations_ds/")
-        print(f"Saved dataset to activations_ds/")
+        for batch in tqdm(
+            self.activation_generator(pipe, train_prompts),
+            total=(len(train_prompts) + self.cfg.batch_size - 1) // self.cfg.batch_size,
+        ):
+            print(batch["activations"].shape)
 
     def subset_prompts(self, prompt_dict: dict) -> list[str]:
         prompts = prompt_dict["prompts"]
