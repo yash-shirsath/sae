@@ -186,13 +186,24 @@ def test_dataloader_custom_ratios(concept_ranges):
         shuffle=False,
     )
 
-    dataset = custom_ratio_loader.dataset
+    # Get all samples from the dataloader
+    all_samples = []
+    for batch in custom_ratio_loader:
+        all_samples.extend(batch)
 
-    # Verify ratios are respected
-    concept_counts = {}
-    for concept, _ in dataset.indices:
-        concept_counts[concept] = concept_counts.get(concept, 0) + 1
+    # Count samples by concept based on their value ranges
+    concept_counts = {"Dogs": 0, "Cats": 0, "Cars": 0}
+    for sample in all_samples:
+        sample_np = sample.numpy()
+        mean_val = np.mean(sample_np)
 
+        # Determine concept based on value range
+        for concept, (min_val, max_val) in concept_ranges.items():
+            if min_val <= mean_val < max_val:
+                concept_counts[concept] += 1
+                break
+
+    # Verify ratios are respected (allowing for small rounding differences)
     assert abs(concept_counts["Dogs"] - 60) <= 1, (
         f"Expected ~60 Dogs samples, got {concept_counts.get('Dogs', 0)}"
     )
