@@ -1,5 +1,6 @@
 import os
 import random
+import argparse
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -41,6 +42,9 @@ class SaveActivationsCfg:
 
     """biased dataset toward main_object"""
     main_object = "Dog"
+
+    """whether this instance of the runner will process only dogs"""
+    only_dog = True
 
 
 class HookedDiffusionPipeline:
@@ -151,15 +155,14 @@ class SaveActivationsRunner:
         pipe.to(self.cfg.device)
 
         train_prompts = self.load_prompts()
-        """
-        for c in concepts:
-            calculate shape of memmap 
-            open memmap 
-            for batch in prompts[c]
-                memmap(b) = latents
-            flush memmap 
-        """
-        for c in set(train_prompts["concept"].unique()) - {"Dogs"}:
+
+        if self.cfg.only_dog:
+            target_concepts = {"Dogs"}
+        else:
+            target_concepts = set(train_prompts["concept"].unique()) - {"Dogs"}
+
+        for c in target_concepts:
+            print(f"starting run for concept {c}")
             prompts = train_prompts[train_prompts["concept"] == c]
             num_prompts = len(prompts)
 
@@ -197,6 +200,17 @@ class SaveActivationsRunner:
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--only-dog", action="store_true", help="Only process dog-related prompts"
+    )
+    args = parser.parse_args()
+
     cfg = SaveActivationsCfg()
+    cfg.only_dog = args.only_dog
+
+    if not cfg.only_dog:
+        cfg.device = "cuda:1"
+
     runner = SaveActivationsRunner(cfg)
     runner.run()
