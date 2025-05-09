@@ -34,6 +34,7 @@ class ActivationDataset(Dataset):
             flatten_activations: Whether to flatten the spatial dimensions (h, w)
         """
         self.data_dir = Path(data_dir)
+        print(self.data_dir)
         self.activation_shape = activation_shape
         self.dtype = dtype
         self.flatten_activations = flatten_activations
