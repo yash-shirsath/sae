@@ -28,6 +28,7 @@ def profile_dataloader(
     batch_size: int = 32,
     num_batches: int = 100,
     num_workers: int = 4,
+    prefetch_factor: int = 2,
 ) -> Tuple[List[float], List[float], List[float]]:
     """
     Profile the dataloader performance.
@@ -51,6 +52,7 @@ def profile_dataloader(
         data_dir=data_dir,
         batch_size=batch_size,
         num_workers=num_workers,
+        prefetch_factor=prefetch_factor,
         # concept_ratios={"Cats": 1},
     )
 
@@ -64,11 +66,11 @@ def profile_dataloader(
     start_time = time.time()
     total_samples = 0
 
+    batch_start = time.time()
     for i, batch in enumerate(dataloader):
         if i >= num_batches:
             break
 
-        batch_start = time.time()
         batch_size = batch.shape[0]
         total_samples += batch_size
 
@@ -76,10 +78,11 @@ def profile_dataloader(
         batch_time = time.time() - batch_start
         batch_times.append(batch_time)
         memory_usage.append(get_memory_usage())
-        throughput.append(batch_size / batch_time)
+        throughput.append(batch_size / (batch_time + 0.01))
 
         if (i + 1) % 10 == 0:
             print(f"Processed {i + 1} batches")
+        batch_start = time.time()
 
     total_time = time.time() - start_time
     print(f"\nProfiling complete!")
@@ -130,7 +133,11 @@ if __name__ == "__main__":
 
     # Profile the dataloader
     batch_times, memory_usage, throughput = profile_dataloader(
-        data_dir=str(activations_dir), batch_size=32, num_batches=100, num_workers=4
+        data_dir=str(activations_dir),
+        batch_size=32,
+        num_batches=100,
+        num_workers=8,
+        prefetch_factor=10,
     )
 
     # Plot the results
