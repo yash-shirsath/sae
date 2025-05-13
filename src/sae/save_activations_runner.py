@@ -30,8 +30,8 @@ class SaveActivationsCfg:
     activation_dtype = t.float16
     num_inference_steps: int = 50
 
-    """biased dataset toward main_object"""
-    main_object = "Dogs"
+    """biased dataset toward main_concept"""
+    main_concept = "Dogs"
 
     """whether this instance of the runner will process only the main concept. Poor mans way to shard dataset across gpus"""
     only_main_concept = True
@@ -151,10 +151,10 @@ class SaveActivationsRunner:
         train_prompts = self.load_prompts()
 
         if self.cfg.only_main_concept:
-            target_concepts = {self.cfg.main_object}
+            target_concepts = {self.cfg.main_concept}
         else:
             target_concepts = set(train_prompts["concept"].unique()) - {
-                self.cfg.main_object
+                self.cfg.main_concept
             }
 
         for c in target_concepts:
@@ -200,7 +200,7 @@ class SaveActivationsRunner:
     def load_prompts(self) -> pd.DataFrame:
         all = load_generated_prompts()
         balanced = balance_concepts_styles(
-            all, main_concept=self.cfg.main_object, random_state=42
+            all, main_concept=self.cfg.main_concept, random_state=42
         )
         return balanced
 
