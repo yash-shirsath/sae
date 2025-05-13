@@ -24,7 +24,7 @@ class SaeConfig(Serializable):
     """
 
     """Dimension of the input activations."""
-    input_dim: int = 1280
+    d_in: int = 1280
 
     """Multiple of the input dimension to use as the SAE dimension."""
     expansion_factor: int = 16
@@ -87,34 +87,33 @@ class ForwardOutput(NamedTuple):
 class Sae(nn.Module):
     def __init__(
         self,
-        d_in: int,
         cfg: SaeConfig,
-        device: str | torch.device = "cpu",
+        device: str | torch.device = "cuda",
         dtype: torch.dtype | None = None,
         *,
         decoder: bool = True,
     ):
         super().__init__()
         self.cfg = cfg
-        self.d_in = d_in
-        self.num_latents = cfg.num_latents or d_in * cfg.expansion_factor
+        self.d_in = cfg.d_in
+        self.num_latents = cfg.num_latents or self.d_in * cfg.expansion_factor
 
         self.encoder = nn.Linear(
-            d_in,
+            self.d_in,
             self.num_latents,
             device=device,
             dtype=dtype,
         )
         self.encoder.bias.data.zero_()
         self.W_dec = (
-            nn.Parameter(self.encoder.weight.data[:, :d_in].clone())
+            nn.Parameter(self.encoder.weight.data[:, : self.d_in].clone())
             if decoder
             else None
         )
         if decoder and self.cfg.normalize_decoder:
             self.set_decoder_norm_to_unit_norm()
 
-        self.b_dec = nn.Parameter(torch.zeros(d_in, dtype=dtype, device=device))
+        self.b_dec = nn.Parameter(torch.zeros(self.d_in, dtype=dtype, device=device))
 
     @staticmethod
     def load_many(
