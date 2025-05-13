@@ -10,7 +10,6 @@ import shutil
 from pathlib import Path
 
 import numpy as np
-import torch
 from tqdm import tqdm
 
 from sae.dataloader import create_activation_dataloader
@@ -18,7 +17,7 @@ from sae.dataloader import create_activation_dataloader
 # Configuration
 TEST_DIR = Path("./test_data")
 CONCEPTS = ["Dogs", "Cats", "Cars"]
-ACTIVATION_SHAPE = (1280 * 50, 16, 16)  # Same as in the real data
+ACTIVATION_SHAPE = (16 * 16, 1280)  # Same as in the real data
 SAMPLES_PER_CONCEPT = {"Dogs": 100, "Cats": 80, "Cars": 60}
 DTYPE = "float16"
 CLEANUP_TEST_DATA = False  # Set to True to clean up test data after running tests

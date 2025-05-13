@@ -26,11 +26,12 @@ class SaveActivationsCfg:
     device: str = "cuda"
 
     batch_size: int = 30
-    subset_size: int = 5_000  # bigger than the biggest prompt len for now
+    subset_size: int = 5  # bigger than the biggest prompt len for now
     activation_dtype = t.float16
+    num_inference_steps: int = 50
 
     """biased dataset toward main_object"""
-    main_object = "Dog"
+    main_object = "Dogs"
 
     """whether this instance of the runner will process only the main concept. Poor mans way to shard dataset across gpus"""
     only_main_concept = True
@@ -75,11 +76,11 @@ class HookedDiffusionPipeline:
         for position in position_activation_map:
             # stacks list of tensors into a step dimension
             activations = t.stack(position_activation_map[position], dim=0)
-            s, b, c, h, w = activations.shape
-            assert (s, c, h, w) == (50, 1280, 16, 16), (
+            s, p, c, h, w = activations.shape
+            assert (s, c, h, w) == (num_inference_steps, 1280, 16, 16), (
                 f"unexpected activation shape: {activations.shape}"
             )
-            activations = rearrange(activations, "steps b c h w -> b (steps c) h w")
+            activations = rearrange(activations, "steps p c h w -> (steps p) (h w) c")
             cache_output[position] = activations
 
         return cache_output
@@ -150,9 +151,11 @@ class SaveActivationsRunner:
         train_prompts = self.load_prompts()
 
         if self.cfg.only_main_concept:
-            target_concepts = {"Dogs"}
+            target_concepts = {self.cfg.main_object}
         else:
-            target_concepts = set(train_prompts["concept"].unique()) - {"Dogs"}
+            target_concepts = set(train_prompts["concept"].unique()) - {
+                self.cfg.main_object
+            }
 
         for c in target_concepts:
             print(f"starting run for concept {c}")
@@ -169,7 +172,7 @@ class SaveActivationsRunner:
                 save_path,
                 dtype="float16",
                 mode="w+",
-                shape=(num_prompts, 1280 * 50, 16, 16),
+                shape=(num_prompts * self.cfg.num_inference_steps, 16 * 16, 1280),
             )
 
             b = self.cfg.batch_size
@@ -184,13 +187,17 @@ class SaveActivationsRunner:
                     positions_to_cache=self.cfg.hook_positions,
                 )
                 activations = activations["unet.up_blocks.1.attentions.1"]
-                handle[i : i + b] = activations.cpu().numpy()
+                start_idx = i * self.cfg.num_inference_steps * b
+                end_idx = start_idx + self.cfg.num_inference_steps * b
+                handle[start_idx:end_idx] = activations.cpu().numpy()
 
             handle.flush()
 
     def load_prompts(self) -> pd.DataFrame:
         all = load_generated_prompts()
-        balanced = balance_concepts_styles(all, main_concept="Dogs", random_state=42)
+        balanced = balance_concepts_styles(
+            all, main_concept=self.cfg.main_object, random_state=42
+        )
         return balanced
 
 

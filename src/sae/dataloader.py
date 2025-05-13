@@ -1,7 +1,6 @@
-import os
 import random
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -16,7 +15,7 @@ class ActivationDataset(Dataset):
         data_dir: Union[str, Path],
         concept_ratios: Optional[Dict[str, float]] = None,
         sample_size: int = 10000,
-        activation_shape: Tuple[int, int, int] = (1280 * 50, 16, 16),
+        activation_shape: Tuple[int, int] = (16 * 16, 1280),
         dtype: str = "float16",
         seed: int = 42,
         flatten_activations: bool = True,
@@ -156,7 +155,7 @@ def create_activation_dataloader(
     batch_size: int = 32,
     concept_ratios: Optional[Dict[str, float]] = None,
     sample_size: int = 10000,
-    activation_shape: Tuple[int, int, int] = (1280 * 50, 16, 16),
+    activation_shape: Tuple[int, int] = (16 * 16, 1280),
     dtype: str = "float16",
     seed: int = 42,
     flatten_activations: bool = True,
@@ -206,7 +205,7 @@ def create_activation_dataloader(
 if __name__ == "__main__":
     # Example usage
     dataloader = create_activation_dataloader(
-        data_dir="./",
+        data_dir="activations",
         batch_size=64,
         concept_ratios={"Dogs": 0.7, "Cats": 0.3},
         sample_size=5000,
