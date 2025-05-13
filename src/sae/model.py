@@ -23,28 +23,31 @@ class SaeConfig(Serializable):
     Configuration for training a sparse autoencoder on a language model.
     """
 
-    expansion_factor: int = 16
+    """Dimension of the input activations."""
+    input_dim: int = 1280
+
     """Multiple of the input dimension to use as the SAE dimension."""
+    expansion_factor: int = 16
 
-    normalize_decoder: bool = True
     """Normalize the decoder weights to have unit norm."""
+    normalize_decoder: bool = True
 
-    num_latents: int = 0
     """Number of latents to use. If 0, use `expansion_factor`."""
+    num_latents: int = 0
 
-    k: int = 32
     """Number of nonzero features."""
+    k: int = 32
 
-    batch_topk: bool = True
     """Train Batch-TopK SAEs"""
+    batch_topk: bool = True
 
-    sample_topk: bool = False
     """Take TopK latents per whole generated sample, not only per patch of the feature map"""
+    sample_topk: bool = False
 
     input_unit_norm: bool = False
 
-    multi_topk: bool = False
     """Use Multi-TopK loss."""
+    multi_topk: bool = False
 
 
 class EncoderOutput(NamedTuple):
