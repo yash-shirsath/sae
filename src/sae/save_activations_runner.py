@@ -1,4 +1,5 @@
 import argparse
+import os
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import List, Optional, Union
@@ -33,6 +34,8 @@ class SaveActivationsCfg:
 
     """whether this instance of the runner will process only the main concept. Poor mans way to shard dataset across gpus"""
     only_main_concept = True
+
+    save_dir: str = "activations"
 
 
 class HookedDiffusionPipeline:
@@ -160,8 +163,10 @@ class SaveActivationsRunner:
                 prompts = prompts.sample(self.cfg.subset_size)
                 num_prompts = self.cfg.subset_size
 
+            os.makedirs(self.cfg.save_dir, exist_ok=True)
+            save_path = os.path.join(self.cfg.save_dir, f"{c}.bin")
             handle = np.memmap(
-                f"{c}.bin",
+                save_path,
                 dtype="float16",
                 mode="w+",
                 shape=(num_prompts, 1280 * 50, 16, 16),
