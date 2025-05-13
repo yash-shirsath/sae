@@ -18,7 +18,6 @@ class ActivationDataset(Dataset):
         activation_shape: Tuple[int, int] = (16 * 16, 1280),
         dtype: str = "float16",
         seed: int = 42,
-        flatten_activations: bool = True,
     ):
         """
         Initialize the dataset.
@@ -30,12 +29,10 @@ class ActivationDataset(Dataset):
             activation_shape: Shape of each activation
             dtype: Data type of the activations
             seed: Random seed for reproducibility
-            flatten_activations: Whether to flatten the spatial dimensions (h, w)
         """
         self.data_dir = Path(data_dir)
         self.activation_shape = activation_shape
         self.dtype = dtype
-        self.flatten_activations = flatten_activations
         self.seed = seed
 
         random.seed(seed)
@@ -145,11 +142,6 @@ class ActivationDataset(Dataset):
 
         # Convert to torch tensor and handle dtype
         activation = torch.from_numpy(activation)
-
-        if self.flatten_activations:
-            # Flatten the spatial dimensions while keeping the channel dimension
-            activation = activation.reshape(activation.shape[0], -1)
-
         return activation
 
 
@@ -161,12 +153,11 @@ def create_activation_dataloader(
     activation_shape: Tuple[int, int] = (16 * 16, 1280),
     dtype: str = "float16",
     seed: int = 42,
-    flatten_activations: bool = True,
     num_workers: int = 8,
     prefetch_factor: int = 10,
     shuffle: bool = True,
     pin_memory: bool = True,
-) -> DataLoader:
+) -> DataLoader[ActivationDataset]:
     """
     Create a dataloader for SAE training with tunable concept ratios.
 
@@ -178,7 +169,6 @@ def create_activation_dataloader(
         activation_shape: Shape of each activation
         dtype: Data type of the activations
         seed: Random seed for reproducibility
-        flatten_activations: Whether to flatten the spatial dimensions
         num_workers: Number of workers for the dataloader
         shuffle: Whether to shuffle the data
 
@@ -192,7 +182,6 @@ def create_activation_dataloader(
         activation_shape=activation_shape,
         dtype=dtype,
         seed=seed,
-        flatten_activations=flatten_activations,
     )
 
     return DataLoader(

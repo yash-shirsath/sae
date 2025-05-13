@@ -1,7 +1,7 @@
-from sae.model import Sae
+from sae.dataloader import create_activation_dataloader
+from sae.model import SaeConfig
 from simple_parsing import Serializable, list_field
 import torch as t
-from sae.model import SaeConfig
 
 
 class TrainConfig(Serializable):
@@ -29,7 +29,6 @@ class Trainer:
 
     def init_dataloader(self):
         return create_activation_dataloader(
-            data_dir="activations",
-            batch_size=50,
-            concept_ratios={"Dogs": 0.7, "Cats": 0.3},
+            data_dir=self.cfg.activation_dir,
+            batch_size=self.cfg.effective_batch_size,
         )
