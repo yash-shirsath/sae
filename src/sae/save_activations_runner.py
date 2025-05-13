@@ -26,7 +26,7 @@ class SaveActivationsCfg:
     device: str = "cuda"
 
     batch_size: int = 30
-    subset_size: int = 5  # bigger than the biggest prompt len for now
+    subset_size: int = 40
     activation_dtype = t.float16
     num_inference_steps: int = 50
 
@@ -187,8 +187,12 @@ class SaveActivationsRunner:
                     positions_to_cache=self.cfg.hook_positions,
                 )
                 activations = activations["unet.up_blocks.1.attentions.1"]
-                start_idx = i * self.cfg.num_inference_steps * b
-                end_idx = start_idx + self.cfg.num_inference_steps * b
+                start_idx = i * self.cfg.num_inference_steps
+                end_idx = min(
+                    start_idx + self.cfg.num_inference_steps * b,
+                    # if current batch is smaller than batch_size
+                    len(handle),
+                )
                 handle[start_idx:end_idx] = activations.cpu().numpy()
 
             handle.flush()

@@ -14,7 +14,7 @@ class ActivationDataset(Dataset):
         self,
         data_dir: Union[str, Path],
         concept_ratios: Optional[Dict[str, float]] = None,
-        sample_size: int = 10000,
+        sample_size: Optional[int] = None,
         activation_shape: Tuple[int, int] = (16 * 16, 1280),
         dtype: str = "float16",
         seed: int = 42,
@@ -26,7 +26,7 @@ class ActivationDataset(Dataset):
         Args:
             data_dir: Directory containing the memmap files
             concept_ratios: Dict mapping concept names to sampling ratios (will be normalized to sum to 1)
-            sample_size: Total number of samples to use for training
+            sample_size: Total number of samples to use for training. If None, uses all available samples.
             activation_shape: Shape of each activation
             dtype: Data type of the activations
             seed: Random seed for reproducibility
@@ -87,15 +87,18 @@ class ActivationDataset(Dataset):
             self.memmaps[concept] = memmap
             self.concept_sizes[concept] = len(memmap)
 
-        # Calculate number of samples per concept
-        self.total_sample_size = sample_size
+        if sample_size is None:
+            self.total_sample_size = sum(self.concept_sizes.values())
+        else:
+            self.total_sample_size = sample_size
+
         self.samples_per_concept = {
-            concept: int(ratio * sample_size)
+            concept: int(ratio * self.total_sample_size)
             for concept, ratio in self.concept_ratios.items()
         }
 
-        # Adjust to ensure we get exactly sample_size samples
-        leftover = sample_size - sum(self.samples_per_concept.values())
+        # Adjust to ensure we get exactly total_sample_size samples
+        leftover = self.total_sample_size - sum(self.samples_per_concept.values())
         if leftover > 0:
             # Add the leftover samples to concepts in order of their ratios
             sorted_concepts = sorted(
@@ -154,7 +157,7 @@ def create_activation_dataloader(
     data_dir: Union[str, Path],
     batch_size: int = 32,
     concept_ratios: Optional[Dict[str, float]] = None,
-    sample_size: int = 10000,
+    sample_size: Optional[int] = None,
     activation_shape: Tuple[int, int] = (16 * 16, 1280),
     dtype: str = "float16",
     seed: int = 42,
@@ -171,7 +174,7 @@ def create_activation_dataloader(
         data_dir: Directory containing the memmap files
         batch_size: Batch size for training
         concept_ratios: Dict mapping concept names to sampling ratios
-        sample_size: Total number of samples to use for training
+        sample_size: Total number of samples to use for training. If None, uses all available samples.
         activation_shape: Shape of each activation
         dtype: Data type of the activations
         seed: Random seed for reproducibility
@@ -206,15 +209,27 @@ if __name__ == "__main__":
     # Example usage
     dataloader = create_activation_dataloader(
         data_dir="activations",
-        batch_size=64,
+        batch_size=50,
         concept_ratios={"Dogs": 0.7, "Cats": 0.3},
-        sample_size=5000,
     )
 
-    # Print some statistics
     print(f"Total batches: {len(dataloader)}")
 
-    # Get a batch and print its shape
-    for batch in dataloader:
-        print(f"Batch shape: {batch.shape}")
-        break
+    # Prefetch first batch
+    dataloader_iter = iter(dataloader)
+    next_batch = next(dataloader_iter)
+    device = "cuda"
+    next_batch = next_batch.to(device, non_blocking=True)
+
+    for i in range(len(dataloader)):
+        # Current batch is the previously prefetched batch
+        batch = next_batch
+
+        # Prefetch next batch if not on the last iteration
+        try:
+            next_batch = next(dataloader_iter)
+            next_batch = next_batch.to(device, non_blocking=True)
+        except StopIteration:
+            break
+
+        print(f"Batch {i} shape: {batch.shape}")
