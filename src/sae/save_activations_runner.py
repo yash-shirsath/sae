@@ -1,23 +1,11 @@
-import os
-import random
 import argparse
 from collections import defaultdict
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Iterable, List, Optional, Tuple, Union
+from typing import List, Optional, Union
 
 import numpy as np
 import pandas as pd
 import torch as t
-from datasets import (
-    Array2D,
-    Array4D,
-    Dataset,
-    Features,
-    Sequence,
-    Value,
-    load_from_disk,
-)
 from diffusers import DDIMScheduler, StableDiffusionPipeline  # type: ignore
 from einops import rearrange
 from tqdm.auto import tqdm
@@ -43,8 +31,8 @@ class SaveActivationsCfg:
     """biased dataset toward main_object"""
     main_object = "Dog"
 
-    """whether this instance of the runner will process only dogs"""
-    only_dog = True
+    """whether this instance of the runner will process only the main concept. Poor mans way to shard dataset across gpus"""
+    only_main_concept = True
 
 
 class HookedDiffusionPipeline:
@@ -57,11 +45,13 @@ class HookedDiffusionPipeline:
     def run_with_cache(
         self,
         prompt: Union[str, List[str]] = "",
-        positions_to_cache: List[str] = [],
+        positions_to_cache: Optional[List[str]] = None,
         guidance_scale: float = 7.5,
         num_inference_steps: int = 50,
         generator: Optional[Union[t.Generator, List[t.Generator]]] = None,
     ) -> dict:
+        if positions_to_cache is None:
+            positions_to_cache = []
         position_activation_map = defaultdict(list)
 
         hook_handles = [
@@ -119,15 +109,15 @@ class HookedDiffusionPipeline:
         block: t.nn.Module = self._locate_block(position)
         return block.register_forward_hook(hook_fn)
 
-    def _locate_block(self, position: str):
+    def _locate_block(self, position: str) -> t.nn.Module:
         block = self.pipe
         for step in position.split("."):
             if step.isdigit():
                 step = int(step)
-                block = block[step]
+                block = block[step]  # type: ignore
             else:
-                block = getattr(block, step)
-        return block
+                block = getattr(block, step)  # type: ignore
+        return block  # type: ignore
 
     def to(self, device: str):
         self.pipe.to(device)
@@ -156,7 +146,7 @@ class SaveActivationsRunner:
 
         train_prompts = self.load_prompts()
 
-        if self.cfg.only_dog:
+        if self.cfg.only_main_concept:
             target_concepts = {"Dogs"}
         else:
             target_concepts = set(train_prompts["concept"].unique()) - {"Dogs"}
@@ -202,14 +192,16 @@ class SaveActivationsRunner:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--only-dog", action="store_true", help="Only process dog-related prompts"
+        "--only-main-concept",
+        action="store_true",
+        help="Only process main concept prompts",
     )
     args = parser.parse_args()
 
     cfg = SaveActivationsCfg()
-    cfg.only_dog = args.only_dog
+    cfg.only_main_concept = args.only_main_concept
 
-    if not cfg.only_dog:
+    if not cfg.only_main_concept:
         cfg.device = "cuda:1"
 
     runner = SaveActivationsRunner(cfg)
