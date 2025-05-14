@@ -39,3 +39,4 @@ uv pip install --pre torch torchvision torchaudio --index-url https://download.p
 sudo apt install build-essential
 
 gsutil -m cp gs://gradient-routing/*.bin .
+gsutil -m cp -r sae-ckpts/ gs://sae-ckpts/
