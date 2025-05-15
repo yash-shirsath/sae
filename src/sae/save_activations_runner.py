@@ -217,8 +217,5 @@ if __name__ == "__main__":
     cfg = SaveActivationsCfg()
     cfg.only_main_concept = args.only_main_concept
 
-    if not cfg.only_main_concept:
-        cfg.device = "cuda:1"
-
     runner = SaveActivationsRunner(cfg)
     runner.run()
