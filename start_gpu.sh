@@ -2,7 +2,7 @@
 source .env
 
 git clone https://${GITHUB_TOKEN}@github.com/yash-shirsath/sae.git
-git config --global user.email "yash.shirsath@gmail.com"
+git config --global user.email "shirsath.yash@gmail.com"
 git config --global user.name "Yash Shirsath (GPU)"
 
 touch ~/.no_auto_tmux
