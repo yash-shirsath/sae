@@ -1,4 +1,3 @@
-import argparse
 import os
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -10,6 +9,7 @@ import torch as t
 from diffusers import DDIMScheduler, StableDiffusionPipeline  # type: ignore
 from einops import rearrange
 from tqdm.auto import tqdm
+import fire
 
 from data.activation_capture_prompts.prepare import load_generated_prompts
 from data.activation_capture_prompts.definitions import concepts
@@ -21,7 +21,7 @@ class SaveActivationsCfg:
     hook_positions: List[str] = field(
         default_factory=lambda: ["unet.up_blocks.1.attentions.1"]
     )
-    device: str = "cuda"
+    device: str = "cuda" if t.cuda.is_available() else "cpu"
 
     prompts_per_batch: int = 30
     max_prompts_per_concept: int = 40
@@ -30,8 +30,20 @@ class SaveActivationsCfg:
     """which concepts to save activations for. defaults to all concepts"""
     concept_indices: List[int] = field(default_factory=lambda: list(range(20)))
 
-    activation_dtype = t.float16
+    activation_dtype_str: str = "float16"
     save_dir: str = "activations"
+
+    @property
+    def activation_dtype(self) -> t.dtype:
+        if self.activation_dtype_str == "float16":
+            return t.float16
+        elif self.activation_dtype_str == "float32":
+            return t.float32
+        else:
+            raise ValueError(
+                f"Unsupported activation_dtype_str: {self.activation_dtype_str}. "
+                "Supported: 'float16', 'float32'."
+            )
 
 
 class HookedDiffusionPipeline:
@@ -195,11 +207,10 @@ class SaveActivationsRunner:
         return load_generated_prompts()
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    args = parser.parse_args()
-
-    cfg = SaveActivationsCfg()
-
+def main(cfg: SaveActivationsCfg = SaveActivationsCfg()):
     runner = SaveActivationsRunner(cfg)
     runner.run()
+
+
+if __name__ == "__main__":
+    fire.Fire(main)

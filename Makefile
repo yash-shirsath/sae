@@ -52,7 +52,9 @@ assemble_prompts:
 	python data/activation_capture_prompts/prepare.py
 
 save_diffusion_activations:
-	python scripts/save_activations_runner.py
+	python src/save_activations_runner.py \
+		--max_prompts_per_concept 1 \
+
 
 # Sync checkpoint data
 download_ckpts: 
