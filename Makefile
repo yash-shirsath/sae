@@ -1,6 +1,8 @@
 SHELL := /bin/bash
 
-.PHONY: all install download_ckpts gather_activations generate_images tmux_run tmux_attach source_env
+export PYTHONPATH := .
+
+.PHONY: all install download_ckpts gather_activations generate_images tmux_run tmux_attach source_env assemble_prompts
 
 
 INSTALL_DIR := $(HOME)/google-cloud-sdk
@@ -46,11 +48,14 @@ install:
 source_env:
 	source .venv/bin/activate
 
+
+assemble_prompts: 
+	python ./data/activation_capture_prompts/prepare.py
+
 # Sync checkpoint data
 download_ckpts: 
 	gsutil -m cp -r gs://sae-ckpts/sae-ckpts/ .
 	
-
 # Collect SAE Activations
 gather_activations: download_ckpts
 	python scripts/gather_sae_acts_ca_prompts_cls.py \
