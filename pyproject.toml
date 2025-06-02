@@ -5,14 +5,25 @@ build-backend = "hatchling.build"
 [project]
 name = "sae"
 version = "0.1.0"
-description = "Your project description"
+description = "Steering Image Generation with Sparse Autoencoders"
 requires-python = ">=3.10"
 dependencies = [
-    "torch",
+    # Linux: Use general 'torch', resolved via CUDA nightly source
+    "torch; sys_platform == 'linux'",
+    "torchvision; sys_platform == 'linux'",
+
+    # macOS arm64: Use general 'torch', resolved via CPU nightly source
+    "torch; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "torchvision; sys_platform == 'darwin' and platform_machine == 'arm64'",
+
+    # macOS x86_64: Use torch <2.2 (e.g., 2.1.2) from PyPI
+    "torch<2.2; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+    "torchvision<0.17; sys_platform == 'darwin' and platform_machine == 'x86_64'", # torchvision 0.16.x corresponds to torch 2.1.x
+
     "accelerate>=1.6.0",
     "diffusers==0.32.2",
     "transformers>=4.48.3",
-    "triton>=2.1.0",
+    "triton>=2.1.0; sys_platform == 'linux'",
     "einops>=0.8.1",
     "natsort>=8.4.0",
     "simple-parsing>=0.1.7",
@@ -29,13 +40,26 @@ dev = [
 ]
 
 [tool.uv.sources]
-torch = { index = "pytorch_index" }
-torchvision = { index = "pytorch_index" }
+torch = [
+  { index = "pytorch_cuda_nightly", marker = "sys_platform == 'linux'" },
+  { index = "pytorch_cpu_nightly", marker = "sys_platform == 'darwin' and platform_machine == 'arm64'" }
+  # For 'darwin' and 'x86_64', torch<2.2 will be sourced from PyPI (default)
+]
+torchvision = [
+  { index = "pytorch_cuda_nightly", marker = "sys_platform == 'linux'" },
+  { index = "pytorch_cpu_nightly", marker = "sys_platform == 'darwin' and platform_machine == 'arm64'" }
+  # For 'darwin' and 'x86_64', torchvision<0.17 will be sourced from PyPI (default)
+]
 
 [[tool.uv.index]]
-name = "pytorch_index"
+name = "pytorch_cuda_nightly"
 url = "https://download.pytorch.org/whl/nightly/cu128"
+explicit = true
 
+[[tool.uv.index]]
+name = "pytorch_cpu_nightly"
+url = "https://download.pytorch.org/whl/nightly/cpu"
+explicit = true
 
 [tool.ruff]
 line-length = 88
