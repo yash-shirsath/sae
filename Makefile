@@ -48,9 +48,11 @@ install:
 source_env:
 	source .venv/bin/activate
 
-
 assemble_prompts: 
-	python ./data/activation_capture_prompts/prepare.py
+	python data/activation_capture_prompts/prepare.py
+
+save_diffusion_activations:
+	python scripts/save_activations_runner.py
 
 # Sync checkpoint data
 download_ckpts: 

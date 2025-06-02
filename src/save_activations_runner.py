@@ -11,10 +11,8 @@ from diffusers import DDIMScheduler, StableDiffusionPipeline  # type: ignore
 from einops import rearrange
 from tqdm.auto import tqdm
 
-from data.activation_capture_prompts.prepare import (
-    balance_concepts_styles,
-    load_generated_prompts,
-)
+from data.activation_capture_prompts.prepare import load_generated_prompts
+from data.activation_capture_prompts.definitions import concepts
 
 
 @dataclass
@@ -25,17 +23,14 @@ class SaveActivationsCfg:
     )
     device: str = "cuda"
 
-    batch_size: int = 30
-    subset_size: int = 40
-    activation_dtype = t.float16
+    prompts_per_batch: int = 30
+    max_prompts_per_concept: int = 40
     num_inference_steps: int = 50
 
-    """biased dataset toward main_concept"""
-    main_concept = "Dogs"
+    """which concepts to save activations for. defaults to all concepts"""
+    concept_indices: List[int] = field(default_factory=lambda: list(range(20)))
 
-    """whether this instance of the runner will process only the main concept. Poor mans way to shard dataset across gpus"""
-    only_main_concept = True
-
+    activation_dtype = t.float16
     save_dir: str = "activations"
 
 
@@ -149,22 +144,21 @@ class SaveActivationsRunner:
         pipe.to(self.cfg.device)
 
         train_prompts = self.load_prompts()
+        target_concepts = set([concepts[i] for i in self.cfg.concept_indices])
+        train_prompts = train_prompts[train_prompts["concept"].isin(target_concepts)]
 
-        if self.cfg.only_main_concept:
-            target_concepts = {self.cfg.main_concept}
-        else:
-            target_concepts = set(train_prompts["concept"].unique()) - {
-                self.cfg.main_concept
-            }
-
-        for c in target_concepts:
+        for c in sorted(target_concepts):
             print(f"starting run for concept {c}")
             prompts = train_prompts[train_prompts["concept"] == c]
             num_prompts = len(prompts)
 
-            if num_prompts > self.cfg.subset_size:
-                prompts = prompts.sample(self.cfg.subset_size)
-                num_prompts = self.cfg.subset_size
+            if num_prompts == 0:
+                print(f"No prompts found for concept {c}, skipping...")
+                continue
+
+            if num_prompts > self.cfg.max_prompts_per_concept:
+                prompts = prompts.sample(self.cfg.max_prompts_per_concept)
+                num_prompts = self.cfg.max_prompts_per_concept
 
             os.makedirs(self.cfg.save_dir, exist_ok=True)
             save_path = os.path.join(self.cfg.save_dir, f"{c}.bin")
@@ -175,7 +169,7 @@ class SaveActivationsRunner:
                 shape=(num_prompts * self.cfg.num_inference_steps, 16 * 16, 1280),
             )
 
-            b = self.cfg.batch_size
+            b = self.cfg.prompts_per_batch
             for i in tqdm(
                 range(0, num_prompts, b),
                 desc=f"Processing {c} prompts",
@@ -198,24 +192,14 @@ class SaveActivationsRunner:
             handle.flush()
 
     def load_prompts(self) -> pd.DataFrame:
-        all = load_generated_prompts()
-        balanced = balance_concepts_styles(
-            all, main_concept=self.cfg.main_concept, random_state=42
-        )
-        return balanced
+        return load_generated_prompts()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--only-main-concept",
-        action="store_true",
-        help="Only process main concept prompts",
-    )
     args = parser.parse_args()
 
     cfg = SaveActivationsCfg()
-    cfg.only_main_concept = args.only_main_concept
 
     runner = SaveActivationsRunner(cfg)
     runner.run()
