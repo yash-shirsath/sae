@@ -11,15 +11,12 @@ dependencies = [
     # Linux: Use general 'torch', resolved via CUDA nightly source
     "torch; sys_platform == 'linux'",
     "torchvision; sys_platform == 'linux'",
-
     # macOS arm64: Use general 'torch', resolved via CPU nightly source
     "torch; sys_platform == 'darwin' and platform_machine == 'arm64'",
     "torchvision; sys_platform == 'darwin' and platform_machine == 'arm64'",
-
     # macOS x86_64: Use torch <2.2 (e.g., 2.1.2) from PyPI
     "torch<2.2; sys_platform == 'darwin' and platform_machine == 'x86_64'",
     "torchvision<0.17; sys_platform == 'darwin' and platform_machine == 'x86_64'", # torchvision 0.16.x corresponds to torch 2.1.x
-
     "accelerate>=1.6.0",
     "diffusers==0.32.2",
     "transformers>=4.48.3",
@@ -31,6 +28,7 @@ dependencies = [
     "matplotlib>=3.9.0",
     "google-cloud-storage>=3.1.0",
     "pandas>=2.2.3",
+    "fire>=0.7.0",
 ]
 
 [dependency-groups]
