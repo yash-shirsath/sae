@@ -153,30 +153,29 @@ class Trainer:
                         )
 
                         avg_fvu[name] += float(
-                            self.maybe_all_reduce(out.fvu.detach()) / denom
+                            out.fvu.detach() / denom
                         )
                         avg_l0[name] += float(
-                            self.maybe_all_reduce(out.l0_loss.detach()) / denom
+                            out.l0_loss.detach() / denom
                         )
                         avg_l2[name] += float(
-                            self.maybe_all_reduce(out.l2_loss.detach()) / denom
+                            out.l2_loss.detach() / denom
                         )
                         avg_exp_var_mean[name] += float(
-                            self.maybe_all_reduce(out.explained_variance.mean().item())
+                            out.explained_variance.mean().item()
                             / denom
                         )
                         avg_exp_var_std[name] += float(
-                            self.maybe_all_reduce(out.explained_variance.std().item())
+                            out.explained_variance.std().item()
                             / denom
                         )
                         if self.cfg.auxk_alpha > 0:
                             avg_auxk_loss[name] += float(
-                                self.maybe_all_reduce(out.auxk_loss.detach()) / denom
+                                out.auxk_loss.detach() / denom
                             )
                         if self.cfg.sae.multi_topk:
                             avg_multi_topk_fvu[name] += float(
-                                self.maybe_all_reduce(out.multi_topk_fvu.detach())
-                                / denom
+                                out.multi_topk_fvu.detach() / denom
                             )
 
                         loss = (
@@ -188,11 +187,7 @@ class Trainer:
 
                         # Update the did_fire mask
                         did_fire[name][out.latent_indices.flatten()] = True
-                        self.maybe_all_reduce(
-                            did_fire[name], "max"
-                        )  # max is boolean "any"
 
-                    # Clip gradient norm independently for each SAE
                     t.nn.utils.clip_grad_norm_(self.sae.parameters(), 1.0)
 
                 # Check if we need to actually do a training step
@@ -225,15 +220,15 @@ class Trainer:
                             for name, count in did_fire_counts.items()
                         }
 
-                        for name in self.saes:
+                        for name in self.cfg.hookpoints:
                             mask = (
                                 self.num_tokens_since_fired[name]
                                 > self.cfg.dead_feature_threshold
                             )
-                            fire_count = torch.zeros(
-                                self.saes[name].num_latents, dtype=torch.long
+                            fire_count = t.zeros(
+                                self.sae.num_latents, dtype=t.long
                             )
-                            unique, unique_counts = torch.unique(
+                            unique, unique_counts = t.unique(
                                 out.latent_indices.flatten(),
                                 return_counts=True,
                             )
@@ -241,7 +236,7 @@ class Trainer:
                             frac_active_list.append(fire_count)
 
                             if len(frac_active_list) > self.cfg.feature_sampling_window:
-                                frac_active_in_window = torch.stack(
+                                frac_active_in_window = t.stack(
                                     frac_active_list[
                                         -self.cfg.feature_sampling_window :
                                     ],
@@ -252,14 +247,14 @@ class Trainer:
                                     * self.effective_batch_size
                                 )
                             else:
-                                frac_active_in_window = torch.stack(
+                                frac_active_in_window = t.stack(
                                     frac_active_list, dim=0
                                 )
                                 feature_sparsity = frac_active_in_window.sum(0) / (
                                     len(frac_active_list) * self.effective_batch_size
                                 )
 
-                            log_feature_sparsity = torch.log10(feature_sparsity + 1e-8)
+                            log_feature_sparsity = t.log10(feature_sparsity + 1e-8)
 
                             info.update(
                                 {
@@ -273,7 +268,7 @@ class Trainer:
                                         name
                                     ],
                                     f"dead_pct/{name}": mask.mean(
-                                        dtype=torch.float32
+                                        dtype=t.float32
                                     ).item(),
                                     f"lr/{name}": self.optimizer.param_groups[0]["lr"],
                                     f"fire_pct/{name}": did_fire_percentages[name],
@@ -333,7 +328,6 @@ class Trainer:
                         avg_multi_topk_fvu.clear()
 
                         wandb.log(info, step=step)
-                        self.log_disk_io(step=step, denom=denom)
 
                     # Reset stats for this step
                     with t.no_grad():
@@ -354,7 +348,30 @@ class Trainer:
         pbar.close()
 
     def save(self):
-        pass
+        """Save the SAEs to disk."""
+
+        path = (
+            f"sae-ckpts/{self.cfg.wandb_project}/{self.cfg.run_name}"
+            if self.cfg.run_name
+            else f"sae-ckpts/{self.cfg.wandb_project}"
+        )
+
+        print("Saving checkpoint")
+
+        for hook in self.cfg.hookpoints:
+            self.sae.save_to_disk(f"{path}/{hook}")
+
+        t.save(self.lr_scheduler.state_dict(), f"{path}/lr_scheduler.pt")
+        t.save(self.optimizer.state_dict(), f"{path}/optimizer.pt")
+        t.save(
+                {
+                    "global_step": self.global_step,
+                    "num_tokens_since_fired": self.num_tokens_since_fired,
+                },
+                f"{path}/state.pt",
+            )
+
+        self.cfg.save_json(f"{path}/config.json")
 
     def load(self, path: str):
         """Load the trainer state from disk."""
