@@ -1,16 +1,23 @@
-# adapted from cywinski/saeuron
+"""
+Adapted from cywinski/saeuron
+"""
 
 from dataclasses import dataclass
 
 from simple_parsing import Serializable, list_field
 
 from sae.model import SaeConfig
-
+import torch as t
 
 @dataclass
 class TrainConfig(Serializable):
     sae: SaeConfig
-    dataset_path: list[str] = list_field()
+    activation_dir: str = "activations"
+    device: str = "cuda" if t.cuda.is_available() else "cpu"
+
+    dtype: t.dtype = t.float16
+
+    num_epochs: int = 5
 
     effective_batch_size: int = 4096
     """Number of activation vectors in a batch."""
@@ -44,9 +51,6 @@ class TrainConfig(Serializable):
     hookpoints: list[str] = list_field()
     """List of hookpoints to train SAEs on."""
 
-    distribute_modules: bool = False
-    """Store a single copy of each SAE, instead of copying them across devices."""
-
     save_every: int = 5000
     """Save SAEs every `save_every` steps."""
 
@@ -57,9 +61,5 @@ class TrainConfig(Serializable):
 
     def __post_init__(self):
         if self.run_name is None:
-            variant = "patch_topk"
-            if self.sae.batch_topk:
-                variant = "batch_topk"
-            elif self.sae.sample_topk:
-                variant = "sample_topk"
+            variant = "batch_topk"
             self.run_name = f"{variant}_expansion_factor{self.sae.expansion_factor}_k{self.sae.k}_multi_topk{self.sae.multi_topk}_auxk_alpha{self.auxk_alpha}"

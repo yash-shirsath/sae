@@ -29,6 +29,7 @@ dependencies = [
     "google-cloud-storage>=3.1.0",
     "pandas>=2.2.3",
     "fire>=0.7.0",
+    "wandb>=0.19.11",
 ]
 
 [dependency-groups]
@@ -83,5 +84,3 @@ line-ending = "auto"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"] 
-
-
