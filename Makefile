@@ -74,7 +74,7 @@ save_latents_per_concept: download_ckpts
 
 # Generate Images
 generate_images: save_latents_per_concept
-	python src/sweep_cls_distr.py \
+	python src/generate_images.py \
 		--percentiles [99.99,99.995,99.999] \
 		--multipliers [-1.0,-5.0,-10.0,-15.0,-20.0,-25.0,-30.0] \
 		--seed 42 \

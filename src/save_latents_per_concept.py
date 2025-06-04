@@ -1,8 +1,6 @@
 """
 Map Concepts to SAE Latents and Save to Disk. 
 These latents will be used to calculate feature importances during steering.
-
-Adapted from cywinski/saeuron.
 """
 
 import os

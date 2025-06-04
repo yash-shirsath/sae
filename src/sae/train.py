@@ -1,7 +1,3 @@
-"""
-Adapted from cywinski/saeuron
-"""
-
 from time import time
 import psutil
 from sae.train_config import TrainConfig
