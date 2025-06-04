@@ -84,12 +84,12 @@ Contains:
 
 ## Acknowledgements
 
-Code is adapted from:
+**Code** and methods adapted from:
 
 - **Cywiński, B., & Deja, K.** (2025). _SAeUron: Interpretable Concept Unlearning in Diffusion Models with Sparse Autoencoders_. arXiv:2501.18052v2 [cs.LG].
 
 - **Gao, L., Dupré la Tour, T., Tillman, H., Goh, G., Troll, R., Radford, A., Sutskever, I., Leike, J., & Wu, J.** (2024). _Scaling and evaluating sparse autoencoders_. arXiv:2406.04093 [cs.LG].
 
-**Dataset**: Prompt data adapted from:
+**Dataset** Prompt data adapted from:
 
 - **Zhang, Y., et al.** (2024). _UnlearnCanvas: A Stylized Image Dataset for Enhanced Machine Unlearning Evaluation in Diffusion Models_.
