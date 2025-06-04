@@ -15,18 +15,15 @@ from tqdm import tqdm
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
-import utils.hooks as hooks
-from SAE.hooked_sd_noised_pipeline import HookedStableDiffusionPipeline
-from SAE.sae import Sae
-from SAE.unlearning_utils import compute_feature_importance
+import sae.hooks as hooks
+from sae.hooked_pipeline import HookedDiffusionPipeline
+from sae.model import Sae
+from sae.feature_importance import compute_feature_importance
 
 
 import fire
 
-from UnlearnCanvas_resources.const import (
-    class_available_yash as all_classes,
-    handpicked_themes_yash as theme_available,
-)
+from data.activation_capture_prompts.definitions import concepts, styles
 
 torch.backends.cuda.matmul.allow_tf32 = True
 torch._inductor.config.conv_1x1_as_mm = True
@@ -57,26 +54,25 @@ def load_sae(sae_checkpoint, hookpoint, device):
 def main(
     pipe_checkpoint,
     hookpoint,
-    class_latents_path,
+    concept_latents_path,
     sae_checkpoint,
     seed=42,
     steps=100,
     percentiles=[99.99, 99.995, 99.999],
     multipliers=[-1.0, -5.0, -10.0, -15.0, -20.0, -25.0, -30.0],
     guidance_scale=9.0,
-    output_dir="sweep_results/mu_results/class20/",
-    num_classes=2,
-    prompts_per_class=80,
+    output_dir="generated_imgs",
+    num_concepts=2,
+    prompts_per_concept=80,
     themes_per_prompt=9,
     batch_size=30,
 ):
     accelerator = Accelerator()
     device = accelerator.device
 
-    model = HookedStableDiffusionPipeline.from_pretrained(
+    model = HookedDiffusionPipeline.from_pretrained(
         pipe_checkpoint,
-        torch_dtype=torch.float16,
-        safety_checker=None,
+        activation_dtype=torch.float16,
     )
     model = model.to(device)
 
@@ -91,33 +87,33 @@ def main(
                 print(
                     "xFormers 0.0.16 cannot be used for training in some GPUs. If you observe problems during training, please update xFormers to at least 0.0.17. See https://huggingface.co/docs/diffusers/main/en/optimization/xformers for more details."
                 )
-        model.enable_xformers_memory_efficient_attention()
+        model.enable_xformers_memory_efficient_attention() # type: ignore
 
     seed_everything(seed)
     generator = torch.Generator(device="cpu").manual_seed(seed)
     sae = load_sae(sae_checkpoint, hookpoint, device)
     with open(
-        class_latents_path,
+        concept_latents_path,
         "rb",
     ) as f:
-        class_latents_dict = pickle.load(f)
+        concept_latents_dict = pickle.load(f)
 
-    subset_classes = all_classes[:num_classes]
-    used_class_latents_dict = {
-        class_: class_latents_dict[class_] for class_ in subset_classes
+    subset_concepts = concepts[:num_concepts]
+    used_concept_latents_dict = {
+        concept_: concept_latents_dict[concept_] for concept_ in subset_concepts
     }
-    class_prompt_dict = {class_: [] for class_ in subset_classes}
-    for class_to_unlearn in subset_classes:
+    concept_prompt_dict = {concept_: [] for concept_ in subset_concepts}
+    for concept_to_unlearn in subset_concepts:
         with open(
             os.path.join(
                 "UnlearnCanvas_resources/anchor_prompts/finetune_prompts",
-                f"sd_prompt_{class_to_unlearn}.txt",
+                f"sd_prompt_{concept_to_unlearn}.txt",
             ),
             "r",
         ) as prompt_file:
             prompts = prompt_file.readlines()
             prompt = [p.strip() for p in prompts]
-            prompt = prompt[:prompts_per_class]
+            prompt = prompt[:prompts_per_concept]
             for p in prompt:
                 for i, theme in enumerate(theme_available):
                     if i >= themes_per_prompt:
@@ -126,43 +122,43 @@ def main(
                         p = p[:-1]
                     suffix = f" in {theme.replace('_', ' ')} style." if theme != "_" else ""
                     prompt = f"{p}{suffix}"
-                    class_prompt_dict[class_to_unlearn].append(prompt)
+                    concept_prompt_dict[concept_to_unlearn].append(prompt)
 
     progress_bar = tqdm(
-        total=len(multipliers) * len(subset_classes) * len(percentiles),
+        total=len(multipliers) * len(subset_concepts) * len(percentiles),
         disable=not accelerator.is_main_process,
     )
     for multiplier in multipliers:
         for percentile in percentiles:
-            for class_to_unlearn in subset_classes:
+            for concept_to_unlearn in subset_concepts:
                 if accelerator.is_main_process:
                     progress_bar.set_description(
-                        f"Multiplier: {multiplier} Percentile: {percentile} Class: {class_to_unlearn}"
+                        f"Multiplier: {multiplier} Percentile: {percentile} Concept: {concept_to_unlearn}"
                     )
                 output_path = os.path.join(
                     output_dir,
-                    f"percentile_{percentile}_multiplier_{multiplier}/{class_to_unlearn}",
+                    f"percentile_{percentile}_multiplier_{multiplier}/{concept_to_unlearn}",
                 )
                 os.makedirs(output_path, exist_ok=True)
                 all_prompts = [
-                    (class_name, prompt)
-                    for class_name, prompts in class_prompt_dict.items()
+                    (concept_name, prompt)
+                    for concept_name, prompts in concept_prompt_dict.items()
                     for prompt in prompts
                 ]
-                input_classes = []
+                input_concepts = []
                 with accelerator.split_between_processes(all_prompts) as local_tuples:
                     local_prompts = [prompt.strip() for _, prompt in local_tuples]
-                    local_classes = [class_name for class_name, _ in local_tuples]
+                    local_concepts = [concept_name for concept_name, _ in local_tuples]
                     all_images = []
                     for i in range(0, len(local_prompts), batch_size):
                         batch_prompts = local_prompts[i:i+batch_size]
                         steering_hooks = {}
                         steering_hooks[hookpoint] = hooks.SAEMaskedUnlearningHook(
-                            concept_to_unlearn=[class_to_unlearn],
+                            concept_to_unlearn=[concept_to_unlearn],
                             percentile=percentile,
                             multiplier=multiplier,
                             feature_importance_fn=compute_feature_importance,
-                            concept_latents_dict=used_class_latents_dict,
+                            concept_latents_dict=used_concept_latents_dict,
                             sae=sae,
                             steps=steps,
                             preserve_error=True,
@@ -180,16 +176,16 @@ def main(
                             )
                         all_images.extend(batch_images)
                     images = all_images
-                    input_classes.extend(local_classes)
+                    input_concepts.extend(local_concepts)
                 accelerator.wait_for_everyone()
                 images = gather_object(images)
-                input_classes = gather_object(input_classes)
+                input_concepts = gather_object(input_concepts)
                 if accelerator.is_main_process:
-                    for i, (img, object_class) in enumerate(zip(images, input_classes)):
+                    for i, (img, object_concept) in enumerate(zip(images, input_concepts)):
                         img.save(
                             os.path.join(
                                 output_path,
-                                f"{object_class}_seed{seed}_{i}.jpg",
+                                f"{object_concept}_seed{seed}_{i}.jpg",
                             )
                         )
                 if accelerator.is_main_process:

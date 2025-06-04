@@ -1,8 +1,10 @@
 from collections import defaultdict
-from typing import List, Optional, Union
-from diffusers import DDIMScheduler, StableDiffusionPipeline # type: ignore
-from torch import t  
-from einops import rearrange  
+from typing import Callable, Dict, List, Optional, Union
+
+from diffusers import DDIMScheduler, StableDiffusionPipeline  # type: ignore
+from einops import rearrange
+from torch import t
+
 
 class HookedDiffusionPipeline:
     def __init__(self, pipe: StableDiffusionPipeline) -> None:
@@ -49,18 +51,70 @@ class HookedDiffusionPipeline:
 
         return cache_output
 
+    @t.no_grad()
+    def run_with_hooks(
+        self,
+        position_hook_dict: Dict[str, Union[Callable, List[Callable]]],
+        prompt: Union[str, List[str]],
+        num_images_per_prompt: Optional[int] = 1,
+        guidance_scale: float = 7.5,
+        num_inference_steps: int = 50,
+        generator: Optional[Union[t.Generator, List[t.Generator]]] = None,
+        latents: Optional[t.Tensor] = None,
+        output_type: Optional[str] = "pil",
+    ):
+        """
+        Run the pipeline with hooks at specified positions.
+        Returns the final output.
+        """
+        hooks = []
+        for position, hook in position_hook_dict.items():
+            if isinstance(hook, list):
+                for h in hook:
+                    hooks.append(self._register_general_hook(position, h))
+            else:
+                hooks.append(self._register_general_hook(position, hook))
+
+        hooks = [hook for hook in hooks if hook is not None]
+
+        try:
+            images = self._run_generation_pipeline(
+                prompt,
+                guidance_scale,
+                num_inference_steps,
+                num_images_per_prompt,
+                latents,
+                output_type,
+                generator,
+            )
+        finally:
+            for hook in hooks:
+                hook.remove()
+
+        return images
+
+    def _register_general_hook(self, position, hook):
+        block = self._locate_block(position)
+        return block.register_forward_hook(hook)
+
     def _run_generation_pipeline(
         self,
         prompt: Union[str, List[str]],
         guidance_scale: float,
         num_inference_steps: int,
-        generator: Optional[Union[t.Generator, List[t.Generator]]],
+        num_images_per_prompt: Optional[int] = 1,
+        latents: Optional[t.Tensor] = None,
+        output_type: Optional[str] = "pil",
+        generator: Optional[Union[t.Generator, List[t.Generator]]] = None,
     ):
-        self.pipe(
+        return self.pipe(
             prompt,
             guidance_scale=guidance_scale,
             num_inference_steps=num_inference_steps,
             generator=generator,
+            latents=latents,
+            output_type=output_type,
+            num_images_per_prompt=num_images_per_prompt,
         )
 
     def _register_cache_hook(self, position: str, cache_output: dict):
@@ -68,7 +122,7 @@ class HookedDiffusionPipeline:
             assert isinstance(output, tuple) and len(output) == 1, (
                 "unexpected output from hook"
             )
-            activations = output[0].to(self.cfg.activation_dtype)
+            activations = output[0].to(self.pipe.dtype)
             _, c, h, w = activations.shape
             assert (c, h, w) == (1280, 16, 16), "unexpected activation shape"
             neg_conditioned, text_conditioned = activations.chunk(2, dim=0)
@@ -91,7 +145,9 @@ class HookedDiffusionPipeline:
         self.pipe.to(device)
 
     @classmethod
-    def from_pretrained(cls, model_name: str, activation_dtype: t.dtype) -> "HookedDiffusionPipeline":
+    def from_pretrained(
+        cls, model_name: str, activation_dtype: t.dtype
+    ) -> "HookedDiffusionPipeline":
         pipe = StableDiffusionPipeline.from_pretrained(
             model_name,
             torch_dtype=activation_dtype,
@@ -99,4 +155,3 @@ class HookedDiffusionPipeline:
         )
         assert isinstance(pipe, StableDiffusionPipeline)
         return cls(pipe)
-
