@@ -81,7 +81,6 @@ Contains:
 
 - Sample prompts for training and evaluation
 - Data preparation and preprocessing scripts
-- Concept definitions and categorizations
 
 ## Acknowledgements
 
@@ -91,8 +90,6 @@ Code is adapted from:
 
 - **Gao, L., Dupré la Tour, T., Tillman, H., Goh, G., Troll, R., Radford, A., Sutskever, I., Leike, J., & Wu, J.** (2024). _Scaling and evaluating sparse autoencoders_. arXiv:2406.04093 [cs.LG].
 
-**Dataset**: Prompt data adapted from Zhang, Y., et al. (2024). _UnlearnCanvas: A Stylized Image Dataset for Enhanced Machine Unlearning Evaluation in Diffusion Models_.
+**Dataset**: Prompt data adapted from:
 
-## License
-
-This project is released under the MIT License. See `LICENSE` file for details.
+- **Zhang, Y., et al.** (2024). _UnlearnCanvas: A Stylized Image Dataset for Enhanced Machine Unlearning Evaluation in Diffusion Models_.
