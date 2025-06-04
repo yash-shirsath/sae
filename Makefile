@@ -2,7 +2,9 @@ SHELL := /bin/bash
 
 export PYTHONPATH := .
 
-.PHONY: all install download_ckpts gather_activations generate_images tmux_run tmux_attach source_env assemble_prompts
+# =============================================================================
+# Configuration
+# =============================================================================
 
 # Paths
 INSTALL_DIR := $(HOME)/google-cloud-sdk
@@ -14,7 +16,7 @@ GENERATED_IMGS_DIR := generated_imgs
 ARTIFACT_BUCKET := gs://image-steering-artifacts
 SAE_CHECKPOINT := sae-ckpts/sae_stable-diffusion-v1-4/patch_topk_expansion_factor32_k32_multi_topkFalse_auxk_alpha0.0_stable-diffusion-v1-4
 
-# Run Config
+# Pipeline Configuration
 HOOKPOINT := unet.up_blocks.1.attentions.1
 NUM_CONCEPTS := 20
 PROMPTS_PER_CONCEPT := 80
@@ -22,18 +24,12 @@ THEMES_PER_PROMPT_GATHER := 9
 STYLES_PER_PROMPT_GENERATE := 2
 STEPS := 80
 
+# =============================================================================
+# Development Environment
+# =============================================================================
 
-# Run all tasks in a tmux session
-tmux_run:
-	tmux new-session -s $(SESSION_NAME) 'source .venv/bin/activate; make generate_images; echo "Pipeline completed. Press any key to exit."; read'
-	@echo "Started pipeline in tmux session named '$(SESSION_NAME)'"
-	@echo "To attach to the session, run: tmux attach-session -t $(SESSION_NAME)"
+.PHONY: install source_env
 
-# Attach to existing tmux session
-tmux_attach:
-	tmux attach-session -t $(SESSION_NAME)
-
-# Install dependencies
 install:
 	mkdir -p $(INSTALL_DIR)
 	apt-get update && apt-get install -y tmux
@@ -45,6 +41,20 @@ install:
 
 source_env:
 	source .venv/bin/activate
+
+# =============================================================================
+# Pipeline Execution
+# =============================================================================
+
+.PHONY: tmux_run tmux_attach assemble_prompts save_diffusion_activations train_sae download_ckpts save_latents_per_concept generate_images upload_generate_imgs_artifacts
+
+tmux_run:
+	tmux new-session -s $(SESSION_NAME) 'source .venv/bin/activate; make generate_images; echo "Pipeline completed. Press any key to exit."; read'
+	@echo "Started pipeline in tmux session named '$(SESSION_NAME)'"
+	@echo "To attach to the session, run: tmux attach-session -t $(SESSION_NAME)"
+
+tmux_attach:
+	tmux attach-session -t $(SESSION_NAME)
 
 assemble_prompts: 
 	python data/activation_capture_prompts/prepare.py
@@ -83,7 +93,6 @@ save_latents_per_concept: download_ckpts
 		--prompts_per_concept $(PROMPTS_PER_CONCEPT) \
 		--themes_per_prompt $(THEMES_PER_PROMPT_GATHER) \
 		--steps $(STEPS)
-
 
 generate_images: save_latents_per_concept
 	python src/generate_images.py \
