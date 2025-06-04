@@ -23,9 +23,6 @@ STYLES_PER_PROMPT_GENERATE := 2
 STEPS := 80
 
 
-# Default target to run everything
-all: source_env download_ckpts gather_activations generate_images
-
 # Run all tasks in a tmux session
 tmux_run:
 	tmux new-session -s $(SESSION_NAME) 'source .venv/bin/activate; make generate_images; echo "Pipeline completed. Press any key to exit."; read'
@@ -52,9 +49,8 @@ source_env:
 assemble_prompts: 
 	python data/activation_capture_prompts/prepare.py
 
-save_diffusion_activations:
-	python src/save_activations_runner.py \
-		--max_prompts_per_concept 1 \
+save_diffusion_activations: assemble_prompts
+	python src/save_activations_runner.py 
 
 train_sae: save_diffusion_activations
 	python src/train_sae_runner.py \
