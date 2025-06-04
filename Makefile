@@ -4,7 +4,7 @@ export PYTHONPATH := .
 
 .PHONY: all install download_ckpts gather_activations generate_images tmux_run tmux_attach source_env assemble_prompts
 
-
+# Paths
 INSTALL_DIR := $(HOME)/google-cloud-sdk
 PIPE_PATH := CompVis/stable-diffusion-v1-4
 SESSION_NAME := saeuron-pipeline
@@ -12,9 +12,9 @@ DIFFUSION_ACT_DIR := diffusion_activations
 SAE_ACT_DIR := sae_activations
 GENERATED_IMGS_DIR := generated_imgs
 ARTIFACT_BUCKET := gs://image-steering-artifacts
+SAE_CHECKPOINT := sae-ckpts/sae_stable-diffusion-v1-4/patch_topk_expansion_factor32_k32_multi_topkFalse_auxk_alpha0.0_stable-diffusion-v1-4
 
 # Run Config
-SAE_CHECKPOINT := sae-ckpts/sae_stable-diffusion-v1-4/patch_topk_expansion_factor32_k32_multi_topkFalse_auxk_alpha0.0_stable-diffusion-v1-4
 HOOKPOINT := unet.up_blocks.1.attentions.1
 NUM_CONCEPTS := 20
 PROMPTS_PER_CONCEPT := 80

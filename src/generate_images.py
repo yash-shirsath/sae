@@ -75,7 +75,7 @@ def main(
     model = model.to(device)
 
     if is_xformers_available():
-        import xformers
+        import xformers  # type: ignore
 
         if accelerator.is_main_process:
             print("Enabling xFormers memory efficient attention")
@@ -147,7 +147,7 @@ def main(
                 ]
                 input_concepts = []
                 with accelerator.split_between_processes(all_prompts) as local_tuples:
-                    local_prompts = [prompt.strip() for _, prompt in local_tuples]
+                    local_prompts = [prompt.strip() for _, prompt in local_tuples]  # type: ignore
                     local_concepts = [concept_name for concept_name, _ in local_tuples]
                     all_images = []
                     for i in range(0, len(local_prompts), batch_size):
