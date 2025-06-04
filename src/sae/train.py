@@ -119,11 +119,6 @@ class Trainer:
                 for name, hiddens in hidden_dict.items():
                     # On the first iteration, initialize the decoder bias
                     if self.global_step == 0:
-                        # NOTE: The all-cat here could conceivably cause an OOM in some
-                        # cases, but it's unlikely to be a problem with small world sizes.
-                        # We could avoid this by "approximating" the geometric median
-                        # across all ranks with the mean (median?) of the geometric medians
-                        # on each rank. Not clear if that would hurt performance.
                         hiddens_input = hiddens.view(-1, hiddens.shape[-1])
                         median = geometric_median(hiddens_input)
                         median = median.to(self.sae.device)
@@ -169,147 +164,130 @@ class Trainer:
 
                     clip_grad_norm_(self.sae.parameters(), 1.0)
 
-                # Check if we need to actually do a training step
-                step, substep = divmod(self.global_step + 1, self.cfg.grad_acc_steps)
-
                 if self.cfg.sae.normalize_decoder:
                     self.sae.remove_gradient_parallel_to_decoder_directions()
 
-                    self.optimizer.step()
-                    self.optimizer.zero_grad()
-                    self.lr_scheduler.step()
+                self.optimizer.step()
+                self.optimizer.zero_grad()
+                self.lr_scheduler.step()
 
-                    with t.no_grad():
-                        # Update the dead feature mask
-                        for name, counts in self.num_tokens_since_fired.items():
-                            counts += num_tokens_in_step
-                            counts[did_fire[name]] = 0
+                with t.no_grad():
+                    # Update the dead feature mask
+                    for name, counts in self.num_tokens_since_fired.items():
+                        counts += num_tokens_in_step
+                        counts[did_fire[name]] = 0
 
-                    if (
-                        self.cfg.log_to_wandb
-                        and (step + 1) % self.cfg.wandb_log_frequency == 0
-                    ):
-                        info = {}
-                        did_fire_counts = {
-                            name: mask.sum().item() for name, mask in did_fire.items()
-                        }
-                        did_fire_percentages = {
-                            name: count / self.sae.num_latents
-                            for name, count in did_fire_counts.items()
-                        }
+                if (
+                    self.cfg.log_to_wandb
+                    and (self.global_step + 1) % self.cfg.wandb_log_frequency == 0
+                ):
+                    info = {}
+                    did_fire_counts = {
+                        name: mask.sum().item() for name, mask in did_fire.items()
+                    }
+                    did_fire_percentages = {
+                        name: count / self.sae.num_latents
+                        for name, count in did_fire_counts.items()
+                    }
 
-                        for name in self.cfg.hookpoints:
-                            mask = (
-                                self.num_tokens_since_fired[name]
-                                > self.cfg.dead_feature_threshold
+                    for name in self.cfg.hookpoints:
+                        mask = (
+                            self.num_tokens_since_fired[name]
+                            > self.cfg.dead_feature_threshold
+                        )
+                        fire_count = t.zeros(self.sae.num_latents, dtype=t.long)
+                        unique, unique_counts = t.unique(
+                            out.latent_indices.flatten(),
+                            return_counts=True,
+                        )
+                        fire_count[unique] = unique_counts.cpu()
+                        frac_active_list.append(fire_count)
+
+                        if len(frac_active_list) > self.cfg.feature_sampling_window:
+                            frac_active_in_window = t.stack(
+                                frac_active_list[-self.cfg.feature_sampling_window :],
+                                dim=0,
                             )
-                            fire_count = t.zeros(self.sae.num_latents, dtype=t.long)
-                            unique, unique_counts = t.unique(
-                                out.latent_indices.flatten(),
-                                return_counts=True,
+                            feature_sparsity = frac_active_in_window.sum(0) / (
+                                self.cfg.feature_sampling_window
+                                * self.effective_batch_size
                             )
-                            fire_count[unique] = unique_counts.cpu()
-                            frac_active_list.append(fire_count)
-
-                            if len(frac_active_list) > self.cfg.feature_sampling_window:
-                                frac_active_in_window = t.stack(
-                                    frac_active_list[
-                                        -self.cfg.feature_sampling_window :
-                                    ],
-                                    dim=0,
-                                )
-                                feature_sparsity = frac_active_in_window.sum(0) / (
-                                    self.cfg.feature_sampling_window
-                                    * self.effective_batch_size
-                                )
-                            else:
-                                frac_active_in_window = t.stack(frac_active_list, dim=0)
-                                feature_sparsity = frac_active_in_window.sum(0) / (
-                                    len(frac_active_list) * self.effective_batch_size
-                                )
-
-                            log_feature_sparsity = t.log10(feature_sparsity + 1e-8)
-
-                            info.update(
-                                {
-                                    f"fvu/{name}": avg_fvu[name],
-                                    f"l0/{name}": avg_l0[name],
-                                    f"l2/{name}": avg_l2[name],
-                                    f"explained_variance/{name}": avg_exp_var_mean[
-                                        name
-                                    ],
-                                    f"explained_variance_std/{name}": avg_exp_var_std[
-                                        name
-                                    ],
-                                    f"dead_pct/{name}": mask.mean(
-                                        dtype=t.float32
-                                    ).item(),
-                                    f"lr/{name}": self.optimizer.param_groups[0]["lr"],
-                                    f"fire_pct/{name}": did_fire_percentages[name],
-                                    f"sparsity_below_1e-2/{name}": (
-                                        feature_sparsity < 1e-2
-                                    )
-                                    .float()
-                                    .mean()
-                                    .item(),
-                                    f"sparsity_below_1e-3/{name}": (
-                                        feature_sparsity < 1e-3
-                                    )
-                                    .float()
-                                    .mean()
-                                    .item(),
-                                    f"sparsity_below_1e-4/{name}": (
-                                        feature_sparsity < 1e-4
-                                    )
-                                    .float()
-                                    .mean()
-                                    .item(),
-                                    f"sparsity_below_1e-5/{name}": (
-                                        feature_sparsity < 1e-5
-                                    )
-                                    .float()
-                                    .mean()
-                                    .item(),
-                                    "total_tokens": total_tokens,
-                                    "data_load_time": data_loading_time,
-                                }
+                        else:
+                            frac_active_in_window = t.stack(frac_active_list, dim=0)
+                            feature_sparsity = frac_active_in_window.sum(0) / (
+                                len(frac_active_list) * self.effective_batch_size
                             )
-                            if self.cfg.auxk_alpha > 0:
-                                info[f"auxk/{name}"] = avg_auxk_loss[name]
 
-                            if (step + 1) % (self.cfg.wandb_log_frequency * 10) == 0:
-                                plt.hist(
-                                    log_feature_sparsity.tolist(),
-                                    bins=50,
-                                    color="blue",
-                                    alpha=0.7,
-                                )
-                                plt.title("Feature Density")
-                                plt.xlabel("Log Feature Density")
-                                plt.tight_layout()
-                                info[f"feature_density/{name}"] = wandb.Image(plt.gcf())
-                                plt.close()
+                        log_feature_sparsity = t.log10(feature_sparsity + 1e-8)
 
-                        avg_auxk_loss.clear()
-                        avg_fvu.clear()
-                        avg_l0.clear()
-                        avg_l2.clear()
-                        avg_exp_var_mean.clear()
-                        avg_exp_var_std.clear()
+                        info.update(
+                            {
+                                f"fvu/{name}": avg_fvu[name],
+                                f"l0/{name}": avg_l0[name],
+                                f"l2/{name}": avg_l2[name],
+                                f"explained_variance/{name}": avg_exp_var_mean[name],
+                                f"explained_variance_std/{name}": avg_exp_var_std[name],
+                                f"dead_pct/{name}": mask.mean(dtype=t.float32).item(),
+                                f"lr/{name}": self.optimizer.param_groups[0]["lr"],
+                                f"fire_pct/{name}": did_fire_percentages[name],
+                                f"sparsity_below_1e-2/{name}": (feature_sparsity < 1e-2)
+                                .float()
+                                .mean()
+                                .item(),
+                                f"sparsity_below_1e-3/{name}": (feature_sparsity < 1e-3)
+                                .float()
+                                .mean()
+                                .item(),
+                                f"sparsity_below_1e-4/{name}": (feature_sparsity < 1e-4)
+                                .float()
+                                .mean()
+                                .item(),
+                                f"sparsity_below_1e-5/{name}": (feature_sparsity < 1e-5)
+                                .float()
+                                .mean()
+                                .item(),
+                                "total_tokens": total_tokens,
+                                "data_load_time": data_loading_time,
+                            }
+                        )
+                        if self.cfg.auxk_alpha > 0:
+                            info[f"auxk/{name}"] = avg_auxk_loss[name]
 
-                        wandb.log(info, step=step)
+                        if (self.global_step + 1) % (
+                            self.cfg.wandb_log_frequency * 10
+                        ) == 0:
+                            plt.hist(
+                                log_feature_sparsity.tolist(),
+                                bins=50,
+                                color="blue",
+                                alpha=0.7,
+                            )
+                            plt.title("Feature Density")
+                            plt.xlabel("Log Feature Density")
+                            plt.tight_layout()
+                            info[f"feature_density/{name}"] = wandb.Image(plt.gcf())
+                            plt.close()
 
-                    # Reset stats for this step
-                    with t.no_grad():
-                        num_tokens_in_step = 0
-                        for mask in did_fire.values():
-                            mask.zero_()
+                    avg_auxk_loss.clear()
+                    avg_fvu.clear()
+                    avg_l0.clear()
+                    avg_l2.clear()
+                    avg_exp_var_mean.clear()
+                    avg_exp_var_std.clear()
 
-                    if (
-                        self.cfg.save_every > 0
-                        and (step + 1) % self.cfg.save_every == 0
-                    ):
-                        self.save()
+                    wandb.log(info, step=self.global_step)
+
+                # Reset stats for this step
+                with t.no_grad():
+                    num_tokens_in_step = 0
+                    for mask in did_fire.values():
+                        mask.zero_()
+
+                if (
+                    self.cfg.save_every > 0
+                    and (self.global_step + 1) % self.cfg.save_every == 0
+                ):
+                    self.save()
 
                 self.global_step += 1
                 pbar.update()

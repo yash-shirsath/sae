@@ -170,7 +170,7 @@ class Sae(nn.Module):
     ) -> "Sae":
         path = Path(path)
 
-        with open(path / "cfg.json", "r") as f:
+        with open(path / "cfg.json") as f:
             cfg_dict = json.load(f)
             cfg = SaeConfig.from_dict(cfg_dict, drop_extra_fields=True)
 
@@ -227,7 +227,8 @@ class Sae(nn.Module):
             k = self.cfg.k
 
         # BatchTopK: Select k * latents.shape[0] latents per all patches in a batch
-        # Total activated latents in batch: bs*sample_size*k (where latents.shape[0] = bs*sample_size)
+        # Total activated latents in batch: bs*sample_size*k
+        # (where latents.shape[0] = bs*sample_size)
         flatten_latents = latents.flatten()
         total_k = k * latents.shape[0]
         top_acts_flatten, top_indices_flatten = flatten_latents.topk(
@@ -239,9 +240,7 @@ class Sae(nn.Module):
             .reshape(latents.shape)
         )
         top_indices_flatten = top_indices_flatten % self.num_latents
-        top_indices = top_indices_flatten.reshape(
-            latents.shape[0], k
-        )  # NOTE: This will not be proper assignment of latents per sample, but per batch it will be correct
+        top_indices = top_indices_flatten.reshape(latents.shape[0], k)
         return EncoderOutput(
             top_acts=top_acts,
             top_indices=top_indices,
