@@ -1,3 +1,9 @@
+"""
+Outdated initial exploration of SAE training using SAELens. 
+Was very useful for initial exploration, but I wanted more control 
+over SAE implementation and training details.
+"""
+
 # %%
 # Standard imports
 import os

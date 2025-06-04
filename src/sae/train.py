@@ -1,4 +1,6 @@
-
+"""
+Adapted from cywinski/saeuron
+"""
 
 from time import time
 import psutil
@@ -8,7 +10,7 @@ from simple_parsing import Serializable, list_field
 from tqdm import tqdm
 from transformers import get_scheduler
 from safetensors.torch import load_model
-from sae.dataloader import create_activation_dataloader
+from dataloader import create_activation_dataloader
 from sae.model import Sae, SaeConfig
 from dataclasses import asdict
 from collections import defaultdict

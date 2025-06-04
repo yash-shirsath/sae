@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 from tqdm import tqdm
 
-from sae.dataloader import create_activation_dataloader
+from dataloader import create_activation_dataloader
 
 # Configuration
 TEST_DIR = Path("./test_data")

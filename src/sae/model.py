@@ -1,4 +1,6 @@
-# adapted from cywinski/saeuron
+"""
+Adapted from cywinski/saeuron
+"""
 
 import json
 from dataclasses import dataclass
@@ -13,8 +15,6 @@ from natsort import natsorted
 from safetensors.torch import load_model, save_model
 from simple_parsing import Serializable
 from torch import Tensor, nn
-
-from sae.sae_decoder import decoder_impl
 
 
 @dataclass
@@ -37,12 +37,6 @@ class SaeConfig(Serializable):
 
     """Number of nonzero features."""
     k: int = 32
-
-    """Train Batch-TopK SAEs"""
-    batch_topk: bool = True
-
-    """Take TopK latents per whole generated sample, not only per patch of the feature map"""
-    sample_topk: bool = False
 
     input_unit_norm: bool = False
 
@@ -184,10 +178,9 @@ class Sae(nn.Module):
 
         with open(path / "cfg.json", "r") as f:
             cfg_dict = json.load(f)
-            d_in = cfg_dict.pop("d_in")
             cfg = SaeConfig.from_dict(cfg_dict, drop_extra_fields=True)
 
-        sae = Sae(d_in, cfg, device=device, decoder=decoder)
+        sae = Sae(cfg, device=device, decoder=decoder)
         load_model(
             model=sae,
             filename=str(path / "sae.safetensors"),
@@ -195,8 +188,6 @@ class Sae(nn.Module):
             # TODO: Maybe be more fine-grained about this in the future?
             strict=decoder,
         )
-        sae.cfg.batch_topk = False
-        sae.cfg.sample_topk = False
         return sae
 
     def save_to_disk(self, path: Path | str):
@@ -240,49 +231,28 @@ class Sae(nn.Module):
         # latents shape: [bs * sample_size, num_latents]
         if k is None:
             k = self.cfg.k
-        if self.cfg.batch_topk:
-            # BatchTopK: Select k*bs latents per all patches in a batch
-            # Total activated latents in batch: bs*sample_size*k
-            flatten_latents = latents.flatten()
-            total_k = k * latents.shape[0]
-            top_acts_flatten, top_indices_flatten = flatten_latents.topk(
-                total_k, sorted=False
-            )
-            top_acts = (
-                torch.zeros_like(flatten_latents, device=latents.device)
-                .scatter(-1, top_indices_flatten, top_acts_flatten)
-                .reshape(latents.shape)
-            )
-            top_indices_flatten = top_indices_flatten % self.num_latents
-            top_indices = top_indices_flatten.reshape(
-                latents.shape[0], k
-            )  # NOTE: This will not be proper assignment of latents per sample, but per batch it will be correct
-            return EncoderOutput(
-                top_acts=top_acts,
-                top_indices=top_indices,
-            )
-        elif self.cfg.sample_topk:
-            # SampleTopK: Select k latents per sample
-            # Total activated latents in batch: bs*k
-            # [bs * sample_size, num_latents] -> [bs, sample_size * num_latents]
-            sample_latents = latents.view(batch_size, -1)
-            top_acts_sample, top_indices_sample = sample_latents.topk(
-                k, sorted=False
-            )  # Take top k along num_latents dimension [bs, k]
-            top_acts = (
-                torch.zeros_like(sample_latents)
-                .scatter_(-1, top_indices_sample, top_acts_sample)
-                .reshape(latents.shape)
-            )
-            top_indices = top_indices_sample % self.num_latents
-            return EncoderOutput(
-                top_acts=top_acts,
-                top_indices=top_indices,
-            )
-
-        # PatchTopK: Select k latents per patch
-        # Total activated latents in batch: bs*sample_size*k
-        return EncoderOutput(*latents.topk(k, sorted=False))
+        
+        # BatchTopK logic becomes the only logic
+        # Select k * latents.shape[0] latents per all patches in a batch
+        # Total activated latents in batch: bs*sample_size*k (where latents.shape[0] = bs*sample_size)
+        flatten_latents = latents.flatten()
+        total_k = k * latents.shape[0]
+        top_acts_flatten, top_indices_flatten = flatten_latents.topk(
+            total_k, sorted=False
+        )
+        top_acts = (
+            torch.zeros_like(flatten_latents, device=latents.device)
+            .scatter(-1, top_indices_flatten, top_acts_flatten)
+            .reshape(latents.shape)
+        )
+        top_indices_flatten = top_indices_flatten % self.num_latents
+        top_indices = top_indices_flatten.reshape(
+            latents.shape[0], k
+        )  # NOTE: This will not be proper assignment of latents per sample, but per batch it will be correct
+        return EncoderOutput(
+            top_acts=top_acts,
+            top_indices=top_indices,
+        )
 
     def encode(self, x: Tensor) -> EncoderOutput:
         """Encode the input and select the top-k latents."""
@@ -294,11 +264,10 @@ class Sae(nn.Module):
 
     def decode(self, top_acts: Tensor, top_indices: Tensor) -> Tensor:
         assert self.W_dec is not None, "Decoder weight was not initialized."
-        if self.cfg.batch_topk or self.cfg.sample_topk:
-            # if batch TopK top_acts are already scattered
-            y = top_acts.to(self.dtype) @ self.W_dec
-        else:
-            y = decoder_impl(top_indices, top_acts.to(self.dtype), self.W_dec.mT)
+        
+        # BatchTopK decoding logic becomes the only logic
+        # if batch TopK top_acts are already scattered
+        y = top_acts.to(self.dtype) @ self.W_dec
         return y + self.b_dec
 
     def preprocess_input(self, x):

@@ -8,7 +8,7 @@ import time
 import psutil
 import torch
 from torch.utils.data import DataLoader
-from sae.dataloader import create_activation_dataloader
+from dataloader import create_activation_dataloader
 import matplotlib.pyplot as plt
 from typing import List, Tuple
 import numpy as np
