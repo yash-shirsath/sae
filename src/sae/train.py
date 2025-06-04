@@ -1,16 +1,18 @@
-from time import time
-import psutil
-from sae.train_config import TrainConfig
-import torch as t
-from simple_parsing import Serializable, list_field
-from tqdm import tqdm
-from transformers import get_scheduler
-from safetensors.torch import load_model
-from dataloader import create_activation_dataloader
-from sae.model import Sae, SaeConfig
-from dataclasses import asdict
 from collections import defaultdict
+from dataclasses import asdict
+from time import time
+
+import psutil
+import torch as t
 from matplotlib import pyplot as plt
+from safetensors.torch import load_model
+from torch.nn.utils.clip_grad import clip_grad_norm_
+from tqdm import tqdm
+from transformers import get_scheduler  # type: ignore
+
+from dataloader import create_activation_dataloader
+from sae.model import Sae
+from sae.train_config import TrainConfig
 
 
 class Trainer:
@@ -43,7 +45,7 @@ class Trainer:
         }
 
         self.global_step = 0
-        self.optimizer = t.optim.Adam(param_groups)
+        self.optimizer = t.optim.Adam(param_groups["params"], **param_groups)
         self.lr_scheduler = get_scheduler(
             name=self.cfg.lr_scheduler,
             optimizer=self.optimizer,
@@ -123,7 +125,7 @@ class Trainer:
                         # across all ranks with the mean (median?) of the geometric medians
                         # on each rank. Not clear if that would hurt performance.
                         hiddens_input = hiddens.view(-1, hiddens.shape[-1])
-                        median = geometric_median(self.maybe_all_cat(hiddens_input))
+                        median = geometric_median(hiddens_input)
                         median = median.to(self.sae.device)
                         self.sae.b_dec.data = median.to(self.sae.dtype)
 
@@ -165,7 +167,7 @@ class Trainer:
                         # Update the did_fire mask
                         did_fire[name][out.latent_indices.flatten()] = True
 
-                    t.nn.utils.clip_grad_norm_(self.sae.parameters(), 1.0)
+                    clip_grad_norm_(self.sae.parameters(), 1.0)
 
                 # Check if we need to actually do a training step
                 step, substep = divmod(self.global_step + 1, self.cfg.grad_acc_steps)
@@ -177,7 +179,6 @@ class Trainer:
                     self.optimizer.zero_grad()
                     self.lr_scheduler.step()
 
-                    ###############
                     with t.no_grad():
                         # Update the dead feature mask
                         for name, counts in self.num_tokens_since_fired.items():
@@ -193,7 +194,7 @@ class Trainer:
                             name: mask.sum().item() for name, mask in did_fire.items()
                         }
                         did_fire_percentages = {
-                            name: count / self.saes[name].num_latents
+                            name: count / self.sae.num_latents
                             for name, count in did_fire_counts.items()
                         }
 
@@ -371,3 +372,33 @@ class Trainer:
             batch_size=self.cfg.effective_batch_size,
         )
         return dl, len(dl), dl.dataset[0].activation_shape
+
+
+@t.no_grad()
+def geometric_median(points: t.Tensor, max_iter: int = 100, tol: float = 1e-5):
+    """Compute the geometric median `points`. Used for initializing decoder bias."""
+    # Initialize our guess as the mean of the points
+    guess = points.mean(dim=0)
+    prev = t.zeros_like(guess)
+
+    # Weights for iteratively reweighted least squares
+    weights = t.ones(len(points), device=points.device)
+
+    for _ in range(max_iter):
+        prev = guess
+
+        # Compute the weights
+        weights = 1 / t.norm(points - guess, dim=1)
+
+        # Normalize the weights
+        weights /= weights.sum()
+
+        # Compute the new geometric median
+        guess = (weights.unsqueeze(1) * points).sum(dim=0)
+
+        # Early stopping condition
+        if t.norm(guess - prev) < tol:
+            print("Early stopping in computation of the geometric median")
+            break
+
+    return guess
