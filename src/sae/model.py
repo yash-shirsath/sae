@@ -232,8 +232,7 @@ class Sae(nn.Module):
         if k is None:
             k = self.cfg.k
         
-        # BatchTopK logic becomes the only logic
-        # Select k * latents.shape[0] latents per all patches in a batch
+        # BatchTopK: Select k * latents.shape[0] latents per all patches in a batch
         # Total activated latents in batch: bs*sample_size*k (where latents.shape[0] = bs*sample_size)
         flatten_latents = latents.flatten()
         total_k = k * latents.shape[0]

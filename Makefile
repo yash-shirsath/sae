@@ -15,8 +15,8 @@ ARTIFACT_BUCKET := gs://image-steering-artifacts
 # Run Config
 SAE_CHECKPOINT := sae-ckpts/sae_stable-diffusion-v1-4/patch_topk_expansion_factor32_k32_multi_topkFalse_auxk_alpha0.0_stable-diffusion-v1-4
 HOOKPOINT := unet.up_blocks.1.attentions.1
-NUM_CLASSES := 5
-PROMPTS_PER_CLASS := 20
+NUM_CONCEPTS := 20
+PROMPTS_PER_CONCEPT := 80
 THEMES_PER_PROMPT_GATHER := 9
 THEMES_PER_PROMPT_GENERATE := 2
 STEPS := 80
@@ -60,31 +60,31 @@ save_diffusion_activations:
 download_ckpts: 
 	gsutil -m cp -r gs://sae-ckpts/sae-ckpts/ .
 	
-# Collect SAE Activations
-gather_activations: download_ckpts
-	python scripts/gather_sae_acts_ca_prompts_cls.py \
+# Map Concepts to SAE Latents
+save_latents_per_concept: download_ckpts
+	python src/save_latents_per_concept.py \
 		--checkpoint_path $(SAE_CHECKPOINT) \
 		--hookpoint "$(HOOKPOINT)" \
 		--pipe_path "$(PIPE_PATH)" \
 		--save_dir $(SAE_ACT_DIR) \
-		--num_classes $(NUM_CLASSES) \
-		--prompts_per_class $(PROMPTS_PER_CLASS) \
+		--num_concepts $(NUM_CONCEPTS) \
+		--prompts_per_concept $(PROMPTS_PER_CONCEPT) \
 		--themes_per_prompt $(THEMES_PER_PROMPT_GATHER) \
 		--steps $(STEPS)
 
 # Generate Images
-generate_images: gather_activations
-	python scripts/sweep_cls_distr.py \
+generate_images: save_latents_per_concept
+	python src/sweep_cls_distr.py \
 		--percentiles [99.99,99.995,99.999] \
 		--multipliers [-1.0,-5.0,-10.0,-15.0,-20.0,-25.0,-30.0] \
 		--seed 42 \
 		--sae_checkpoint $(SAE_CHECKPOINT) \
 		--pipe_checkpoint "$(PIPE_PATH)" \
 		--hookpoint '$(HOOKPOINT)' \
-		--class_latents_path $(SAE_ACT_DIR)/cls_latents_dict_$(HOOKPOINT).pkl \
+		--class_latents_path $(SAE_ACT_DIR)/concept_latents_dict_$(HOOKPOINT).pkl \
 		--output_dir $(GENERATED_IMGS_DIR) \
-		--num_classes $(NUM_CLASSES) \
-		--prompts_per_class $(PROMPTS_PER_CLASS) \
+		--num_concepts $(NUM_CONCEPTS) \
+		--prompts_per_concept $(PROMPTS_PER_CONCEPT) \
 		--themes_per_prompt $(THEMES_PER_PROMPT_GENERATE) \
 		--steps $(STEPS)
 
@@ -98,8 +98,8 @@ upload_generate_imgs_artifacts:
 		--generated-imgs-dir "$(GENERATED_IMGS_DIR)" \
 		--artifact-bucket "$(ARTIFACT_BUCKET)" \
 		--hookpoint "$(HOOKPOINT)" \
-		--num-classes "$(NUM_CLASSES)" \
-		--prompts-per-class "$(PROMPTS_PER_CLASS)" \
+		--num-concepts "$(NUM_CONCEPTS)" \
+		--prompts-per-concept "$(PROMPTS_PER_CONCEPT)" \
 		--themes-per-prompt-gather "$(THEMES_PER_PROMPT_GATHER)" \
 		--themes-per-prompt-generate "$(THEMES_PER_PROMPT_GENERATE)" \
 		--steps "$(STEPS)"
