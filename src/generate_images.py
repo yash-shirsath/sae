@@ -15,23 +15,23 @@ from tqdm import tqdm
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
+import fire
+from diffusers.utils.import_utils import is_xformers_available
+
 import sae.hooks as hooks
+from data.activation_capture_prompts.definitions import concepts, styles
+from sae.feature_importance import compute_feature_importance
 from sae.hooked_pipeline import HookedDiffusionPipeline
 from sae.model import Sae
-from sae.feature_importance import compute_feature_importance
 
-
-import fire
-
-from data.activation_capture_prompts.definitions import concepts, styles
-
+"""
+optimizations from https://pytorch.org/blog/accelerating-generative-ai-3/
+"""
 torch.backends.cuda.matmul.allow_tf32 = True
-torch._inductor.config.conv_1x1_as_mm = True
-torch._inductor.config.coordinate_descent_tuning = True
-torch._inductor.config.epilogue_fusion = False
-torch._inductor.config.coordinate_descent_check_all_directions = True
-
-from diffusers.utils.import_utils import is_xformers_available
+torch._inductor.config.conv_1x1_as_mm = True  # type: ignore
+torch._inductor.config.coordinate_descent_tuning = True  # type: ignore
+torch._inductor.config.epilogue_fusion = False  # type: ignore
+torch._inductor.config.coordinate_descent_check_all_directions = True  # type: ignore
 
 
 def seed_everything(seed):
@@ -46,8 +46,6 @@ def load_sae(sae_checkpoint, hookpoint, device):
         os.path.join(sae_checkpoint, hookpoint), device=device
     ).eval()
     sae = sae.to(dtype=torch.float16)
-    sae.cfg.batch_topk = False
-    sae.cfg.sample_topk = False
     return sae
 
 
@@ -64,7 +62,7 @@ def main(
     output_dir="generated_imgs",
     num_concepts=2,
     prompts_per_concept=80,
-    themes_per_prompt=9,
+    styles_per_prompt=9,
     batch_size=30,
 ):
     accelerator = Accelerator()
@@ -87,10 +85,10 @@ def main(
                 print(
                     "xFormers 0.0.16 cannot be used for training in some GPUs. If you observe problems during training, please update xFormers to at least 0.0.17. See https://huggingface.co/docs/diffusers/main/en/optimization/xformers for more details."
                 )
-        model.enable_xformers_memory_efficient_attention() # type: ignore
+        model.enable_xformers_memory_efficient_attention()  # type: ignore
 
     seed_everything(seed)
-    generator = torch.Generator(device="cpu").manual_seed(seed)
+
     sae = load_sae(sae_checkpoint, hookpoint, device)
     with open(
         concept_latents_path,
@@ -115,12 +113,14 @@ def main(
             prompt = [p.strip() for p in prompts]
             prompt = prompt[:prompts_per_concept]
             for p in prompt:
-                for i, theme in enumerate(theme_available):
-                    if i >= themes_per_prompt:
+                for i, style in enumerate(styles):
+                    if i >= styles_per_prompt:
                         break
-                    if p.endswith('.'):
+                    if p.endswith("."):
                         p = p[:-1]
-                    suffix = f" in {theme.replace('_', ' ')} style." if theme != "_" else ""
+                    suffix = (
+                        f" in {style.replace('_', ' ')} style." if style != "_" else ""
+                    )
                     prompt = f"{p}{suffix}"
                     concept_prompt_dict[concept_to_unlearn].append(prompt)
 
@@ -151,7 +151,7 @@ def main(
                     local_concepts = [concept_name for concept_name, _ in local_tuples]
                     all_images = []
                     for i in range(0, len(local_prompts), batch_size):
-                        batch_prompts = local_prompts[i:i+batch_size]
+                        batch_prompts = local_prompts[i : i + batch_size]
                         steering_hooks = {}
                         steering_hooks[hookpoint] = hooks.SAEMaskedUnlearningHook(
                             concept_to_unlearn=[concept_to_unlearn],
@@ -163,9 +163,11 @@ def main(
                             steps=steps,
                             preserve_error=True,
                         )
-                        
+
                         # Create a new generator for each batch to ensure consistent results
-                        batch_generator = torch.Generator(device="cpu").manual_seed(seed + i)
+                        batch_generator = torch.Generator(device="cpu").manual_seed(
+                            seed + i
+                        )
                         with torch.no_grad():
                             batch_images = model.run_with_hooks(
                                 prompt=batch_prompts,
@@ -181,7 +183,9 @@ def main(
                 images = gather_object(images)
                 input_concepts = gather_object(input_concepts)
                 if accelerator.is_main_process:
-                    for i, (img, object_concept) in enumerate(zip(images, input_concepts)):
+                    for i, (img, object_concept) in enumerate(
+                        zip(images, input_concepts)
+                    ):
                         img.save(
                             os.path.join(
                                 output_path,

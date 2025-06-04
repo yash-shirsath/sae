@@ -1,13 +1,10 @@
-"""
-Adapted from cywinski/saeuron
-"""
-
 from dataclasses import dataclass
 
+import torch as t
 from simple_parsing import Serializable, list_field
 
 from sae.model import SaeConfig
-import torch as t
+
 
 @dataclass
 class TrainConfig(Serializable):
@@ -62,4 +59,4 @@ class TrainConfig(Serializable):
     def __post_init__(self):
         if self.run_name is None:
             variant = "batch_topk"
-            self.run_name = f"{variant}_expansion_factor{self.sae.expansion_factor}_k{self.sae.k}_multi_topk{self.sae.multi_topk}_auxk_alpha{self.auxk_alpha}"
+            self.run_name = f"{variant}_expansion_factor{self.sae.expansion_factor}_k{self.sae.k}_multi_topk{False}_auxk_alpha{self.auxk_alpha}"

@@ -40,9 +40,6 @@ class SaeConfig(Serializable):
 
     input_unit_norm: bool = False
 
-    """Use Multi-TopK loss."""
-    multi_topk: bool = False
-
 
 class EncoderOutput(NamedTuple):
     top_acts: Tensor
@@ -71,9 +68,6 @@ class ForwardOutput(NamedTuple):
 
     auxk_loss: Tensor
     """AuxK loss, if applicable."""
-
-    multi_topk_fvu: Tensor
-    """Multi-TopK FVU, if applicable."""
 
     explained_variance: Tensor
 
@@ -231,7 +225,7 @@ class Sae(nn.Module):
         # latents shape: [bs * sample_size, num_latents]
         if k is None:
             k = self.cfg.k
-        
+
         # BatchTopK: Select k * latents.shape[0] latents per all patches in a batch
         # Total activated latents in batch: bs*sample_size*k (where latents.shape[0] = bs*sample_size)
         flatten_latents = latents.flatten()
@@ -263,7 +257,7 @@ class Sae(nn.Module):
 
     def decode(self, top_acts: Tensor, top_indices: Tensor) -> Tensor:
         assert self.W_dec is not None, "Decoder weight was not initialized."
-        
+
         # BatchTopK decoding logic becomes the only logic
         # if batch TopK top_acts are already scattered
         y = top_acts.to(self.dtype) @ self.W_dec
@@ -333,16 +327,6 @@ class Sae(nn.Module):
         per_token_total_variance = (x - x.mean(0)).pow(2).sum(-1)
         explained_variance = 1 - per_token_l2_loss / per_token_total_variance
 
-        if self.cfg.multi_topk:
-            top_acts, top_indices = self.select_topk(
-                pre_acts, k=4 * self.cfg.k, batch_size=batch_size
-            )
-            sae_out = self.decode(top_acts, top_indices)
-
-            multi_topk_fvu = (sae_out - x).float().pow(2).sum() / total_variance
-        else:
-            multi_topk_fvu = sae_out.new_tensor(0.0)
-
         sae_out = self.postprocess_output(sae_out, x_mean, x_std)
 
         return ForwardOutput(
@@ -353,7 +337,6 @@ class Sae(nn.Module):
             l0_loss,
             l2_loss / (batch_size * sample_size * emb_size),
             auxk_loss,
-            multi_topk_fvu,
             explained_variance,
         )
 

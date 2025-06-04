@@ -8,6 +8,7 @@ export PYTHONPATH := .
 INSTALL_DIR := $(HOME)/google-cloud-sdk
 PIPE_PATH := CompVis/stable-diffusion-v1-4
 SESSION_NAME := saeuron-pipeline
+DIFFUSION_ACT_DIR := diffusion_activations
 SAE_ACT_DIR := sae_activations
 GENERATED_IMGS_DIR := generated_imgs
 ARTIFACT_BUCKET := gs://image-steering-artifacts
@@ -18,7 +19,7 @@ HOOKPOINT := unet.up_blocks.1.attentions.1
 NUM_CONCEPTS := 20
 PROMPTS_PER_CONCEPT := 80
 THEMES_PER_PROMPT_GATHER := 9
-THEMES_PER_PROMPT_GENERATE := 2
+STYLES_PER_PROMPT_GENERATE := 2
 STEPS := 80
 
 
@@ -55,8 +56,23 @@ save_diffusion_activations:
 	python src/save_activations_runner.py \
 		--max_prompts_per_concept 1 \
 
+train_sae: save_diffusion_activations
+	python src/train_sae_runner.py \
+		--activation_dir "$(DIFFUSION_ACT_DIR)/$(HOOKPOINT)" \
+		--hookpoints "$(HOOKPOINT)" \
+		--effective_batch_size 4096 \
+		--auxk_alpha 0.03125 \
+		--expansion_factor 16 \
+		--k 32 \
+		--num_workers 4 \
+		--wandb_log_frequency 4000 \
+		--num_epochs 5 \
+		--dead_feature_threshold 10000000 \
+		--lr 4e-4 \
+		--lr_scheduler "linear" \
+		--lr_warmup_steps 0 \
+		--log_to_wandb True
 
-# Sync checkpoint data
 download_ckpts: 
 	gsutil -m cp -r gs://sae-ckpts/sae-ckpts/ .
 	
@@ -72,7 +88,7 @@ save_latents_per_concept: download_ckpts
 		--themes_per_prompt $(THEMES_PER_PROMPT_GATHER) \
 		--steps $(STEPS)
 
-# Generate Images
+
 generate_images: save_latents_per_concept
 	python src/generate_images.py \
 		--percentiles [99.99,99.995,99.999] \
@@ -81,11 +97,11 @@ generate_images: save_latents_per_concept
 		--sae_checkpoint $(SAE_CHECKPOINT) \
 		--pipe_checkpoint "$(PIPE_PATH)" \
 		--hookpoint '$(HOOKPOINT)' \
-		--class_latents_path $(SAE_ACT_DIR)/concept_latents_dict_$(HOOKPOINT).pkl \
+		--concept_latents_path $(SAE_ACT_DIR)/concept_latents_dict_$(HOOKPOINT).pkl \
 		--output_dir $(GENERATED_IMGS_DIR) \
 		--num_concepts $(NUM_CONCEPTS) \
 		--prompts_per_concept $(PROMPTS_PER_CONCEPT) \
-		--themes_per_prompt $(THEMES_PER_PROMPT_GENERATE) \
+		--styles_per_prompt $(STYLES_PER_PROMPT_GENERATE) \
 		--steps $(STEPS)
 
 upload_generate_imgs_artifacts: 
@@ -100,8 +116,8 @@ upload_generate_imgs_artifacts:
 		--hookpoint "$(HOOKPOINT)" \
 		--num-concepts "$(NUM_CONCEPTS)" \
 		--prompts-per-concept "$(PROMPTS_PER_CONCEPT)" \
-		--themes-per-prompt-gather "$(THEMES_PER_PROMPT_GATHER)" \
-		--themes-per-prompt-generate "$(THEMES_PER_PROMPT_GENERATE)" \
+		--styles-per-prompt-gather "$(STYLES_PER_PROMPT_GATHER)" \
+		--styles-per-prompt-generate "$(STYLES_PER_PROMPT_GENERATE)" \
 		--steps "$(STEPS)"
 	
 	

@@ -12,6 +12,7 @@ from dataclasses import asdict
 from collections import defaultdict
 from matplotlib import pyplot as plt
 
+
 class Trainer:
     def __init__(self, cfg: TrainConfig) -> None:
         self.cfg = cfg
@@ -31,7 +32,7 @@ class Trainer:
         print(f"Effective batch size: {self.effective_batch_size}")
         print(f"Batch size: {self.batch_size}")
         print(self.sae)
-        
+
         self.increment_tokens = self.effective_batch_size
 
         param_groups = {
@@ -68,15 +69,13 @@ class Trainer:
                 print("Weights & Biases not installed, skipping logging.")
                 self.cfg.log_to_wandb = False
 
-        num_sae_params = sum(
-            p.numel() for p in self.sae.parameters()
-        )
+        num_sae_params = sum(p.numel() for p in self.sae.parameters())
         print(f"Number of SAE parameters: {num_sae_params:_}")
 
         num_batches = (self.num_examples // self.batch_size) * self.cfg.num_epochs
 
         device = t.device(self.cfg.device)
-        
+
         pbar = tqdm(
             desc="Training",
             initial=self.global_step,
@@ -97,7 +96,7 @@ class Trainer:
         avg_l2 = defaultdict(float)
         avg_exp_var_mean = defaultdict(float)
         avg_exp_var_std = defaultdict(float)
-        avg_multi_topk_fvu = defaultdict(float)
+
         frac_active_list = []  # track active features
 
         # Initialize disk I/O stats
@@ -116,7 +115,6 @@ class Trainer:
                 total_tokens += self.increment_tokens
 
                 for name, hiddens in hidden_dict.items():
-
                     # On the first iteration, initialize the decoder bias
                     if self.global_step == 0:
                         # NOTE: The all-cat here could conceivably cause an OOM in some
@@ -128,7 +126,6 @@ class Trainer:
                         median = geometric_median(self.maybe_all_cat(hiddens_input))
                         median = median.to(self.sae.device)
                         self.sae.b_dec.data = median.to(self.sae.dtype)
-
 
                     # Make sure the W_dec is still unit-norm
                     if self.sae.cfg.normalize_decoder:
@@ -150,37 +147,19 @@ class Trainer:
                             ),
                         )
 
-                        avg_fvu[name] += float(
-                            out.fvu.detach() / denom
-                        )
-                        avg_l0[name] += float(
-                            out.l0_loss.detach() / denom
-                        )
-                        avg_l2[name] += float(
-                            out.l2_loss.detach() / denom
-                        )
+                        avg_fvu[name] += float(out.fvu.detach() / denom)
+                        avg_l0[name] += float(out.l0_loss.detach() / denom)
+                        avg_l2[name] += float(out.l2_loss.detach() / denom)
                         avg_exp_var_mean[name] += float(
-                            out.explained_variance.mean().item()
-                            / denom
+                            out.explained_variance.mean().item() / denom
                         )
                         avg_exp_var_std[name] += float(
-                            out.explained_variance.std().item()
-                            / denom
+                            out.explained_variance.std().item() / denom
                         )
                         if self.cfg.auxk_alpha > 0:
-                            avg_auxk_loss[name] += float(
-                                out.auxk_loss.detach() / denom
-                            )
-                        if self.cfg.sae.multi_topk:
-                            avg_multi_topk_fvu[name] += float(
-                                out.multi_topk_fvu.detach() / denom
-                            )
+                            avg_auxk_loss[name] += float(out.auxk_loss.detach() / denom)
 
-                        loss = (
-                            out.fvu
-                            + self.cfg.auxk_alpha * out.auxk_loss
-                            + out.multi_topk_fvu / 8
-                        )
+                        loss = out.fvu + self.cfg.auxk_alpha * out.auxk_loss
                         loss.div(acc_steps).backward()
 
                         # Update the did_fire mask
@@ -190,7 +169,7 @@ class Trainer:
 
                 # Check if we need to actually do a training step
                 step, substep = divmod(self.global_step + 1, self.cfg.grad_acc_steps)
-                
+
                 if self.cfg.sae.normalize_decoder:
                     self.sae.remove_gradient_parallel_to_decoder_directions()
 
@@ -223,9 +202,7 @@ class Trainer:
                                 self.num_tokens_since_fired[name]
                                 > self.cfg.dead_feature_threshold
                             )
-                            fire_count = t.zeros(
-                                self.sae.num_latents, dtype=t.long
-                            )
+                            fire_count = t.zeros(self.sae.num_latents, dtype=t.long)
                             unique, unique_counts = t.unique(
                                 out.latent_indices.flatten(),
                                 return_counts=True,
@@ -245,9 +222,7 @@ class Trainer:
                                     * self.effective_batch_size
                                 )
                             else:
-                                frac_active_in_window = t.stack(
-                                    frac_active_list, dim=0
-                                )
+                                frac_active_in_window = t.stack(frac_active_list, dim=0)
                                 feature_sparsity = frac_active_in_window.sum(0) / (
                                     len(frac_active_list) * self.effective_batch_size
                                 )
@@ -300,10 +275,7 @@ class Trainer:
                             )
                             if self.cfg.auxk_alpha > 0:
                                 info[f"auxk/{name}"] = avg_auxk_loss[name]
-                            if self.cfg.sae.multi_topk:
-                                info[f"multi_topk_fvu/{name}"] = avg_multi_topk_fvu[
-                                    name
-                                ]
+
                             if (step + 1) % (self.cfg.wandb_log_frequency * 10) == 0:
                                 plt.hist(
                                     log_feature_sparsity.tolist(),
@@ -323,7 +295,6 @@ class Trainer:
                         avg_l2.clear()
                         avg_exp_var_mean.clear()
                         avg_exp_var_std.clear()
-                        avg_multi_topk_fvu.clear()
 
                         wandb.log(info, step=step)
 
@@ -338,7 +309,6 @@ class Trainer:
                         and (step + 1) % self.cfg.save_every == 0
                     ):
                         self.save()
-                    
 
                 self.global_step += 1
                 pbar.update()
@@ -362,12 +332,12 @@ class Trainer:
         t.save(self.lr_scheduler.state_dict(), f"{path}/lr_scheduler.pt")
         t.save(self.optimizer.state_dict(), f"{path}/optimizer.pt")
         t.save(
-                {
-                    "global_step": self.global_step,
-                    "num_tokens_since_fired": self.num_tokens_since_fired,
-                },
-                f"{path}/state.pt",
-            )
+            {
+                "global_step": self.global_step,
+                "num_tokens_since_fired": self.num_tokens_since_fired,
+            },
+            f"{path}/state.pt",
+        )
 
         self.cfg.save_json(f"{path}/config.json")
 
@@ -376,9 +346,7 @@ class Trainer:
         device = self.cfg.device
 
         # Load the train state first so we can print the step number
-        train_state = t.load(
-            f"{path}/state.pt", map_location=device, weights_only=True
-        )
+        train_state = t.load(f"{path}/state.pt", map_location=device, weights_only=True)
         self.global_step = train_state["global_step"]
         self.num_tokens_since_fired = train_state["num_tokens_since_fired"]
 

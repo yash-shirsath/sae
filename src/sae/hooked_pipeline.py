@@ -141,8 +141,9 @@ class HookedDiffusionPipeline:
                 block = getattr(block, step)  # type: ignore
         return block  # type: ignore
 
-    def to(self, device: str):
+    def to(self, device: str) -> "HookedDiffusionPipeline":
         self.pipe.to(device)
+        return self
 
     @classmethod
     def from_pretrained(
