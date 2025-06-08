@@ -1,5 +1,7 @@
 # Steering Stable Diffusion Using Sparse Autoencoders
 
+[demo](https://steering-demo-app.vercel.app/)
+
 This project implements a pipeline for steering Stable Diffusion models using Sparse Autoencoders (SAEs) to enable interpretable concept manipulation in generated images. The implementation is based on cutting-edge research in mechanistic interpretability and allows for fine-grained control over specific concepts in diffusion models.
 
 ## Overview
